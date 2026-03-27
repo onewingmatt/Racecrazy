@@ -1,13 +1,14 @@
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, Quaternion } from "@babylonjs/core";
 import { Renderer } from "../rendering/Renderer";
 import { PhysicsEngine } from "../physics/PhysicsEngine";
 import { BlockRegistry } from "../track/BlockRegistry";
 import { TrackParser } from "../track/TrackParser";
 import { ArcadeCar } from "../gameplay/ArcadeCar";
-import { RaceManager } from "../gameplay/RaceManager";
+import { RaceManager, RaceState } from "../gameplay/RaceManager";
 import { InputManager } from "../core/InputManager";
 import { GameLoop } from "../core/GameLoop";
 import { UIOverlay } from "../ui/UIOverlay";
+import { PlayerFrameSnapshot, CarSnapshot, RaceProgressionSnapshot } from "../gameplay/Snapshot";
 
 // Sample Track Data
 import trackData from "../data/track.json";
@@ -24,6 +25,9 @@ export class App {
     private ui: UIOverlay;
 
     private parsedTrack: any;
+
+    // Ghost recording buffer (for demonstration of serialization capability)
+    private ghostBuffer: PlayerFrameSnapshot[] = [];
 
     constructor() {
         this.renderer = new Renderer();
@@ -72,9 +76,9 @@ export class App {
     private setupTriggers(): void {
         this.parsedTrack.checkpoints.forEach((cp: any) => {
             cp.mesh.onCollide = (collidedMesh: any) => {
-                if (collidedMesh === this.car.mesh && this.raceManager.isRacing) {
+                if (collidedMesh === this.car.mesh && this.raceManager.state === RaceState.RACING) {
                     if (this.raceManager.hitCheckpoint(cp.id)) {
-                        this.ui.showMessage("CHECKPOINT!");
+                        this.ui.showMessage(`CHECKPOINT ${cp.id + 1}!`);
                     }
                 }
             };
@@ -82,7 +86,7 @@ export class App {
 
         if (this.parsedTrack.finishVolume) {
             this.parsedTrack.finishVolume.onCollide = (collidedMesh: any) => {
-                if (collidedMesh === this.car.mesh && this.raceManager.isRacing) {
+                if (collidedMesh === this.car.mesh && this.raceManager.state === RaceState.RACING) {
                     if (this.raceManager.hitFinish()) {
                         this.ui.showMessage("FINISH!");
                         this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime!));
@@ -94,11 +98,46 @@ export class App {
 
     private resetRace(): void {
         this.car.setPosition(this.parsedTrack.startPosition, this.parsedTrack.startRotationDeg);
-        this.raceManager.startRace(this.parsedTrack.checkpoints.length + (this.parsedTrack.finishVolume ? 1 : 0));
+        this.raceManager.startRace(this.parsedTrack.checkpoints.length);
+        this.ghostBuffer = []; // Clear recorded ghost frames on restart
 
         if (this.raceManager.bestTime) {
             this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime));
         }
+    }
+
+    private createSnapshot(timestampMs: number): PlayerFrameSnapshot {
+        // Extract plain data from Babylon structures.
+        // This is safe to JSON stringify and send over network or save.
+
+        const pos = this.car.mesh.getAbsolutePosition();
+        const rot = this.car.mesh.rotationQuaternion || Quaternion.Identity();
+        const linVel = this.car.body.getLinearVelocity();
+        const angVel = this.car.body.getAngularVelocity();
+
+        const carState: CarSnapshot = {
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: { x: rot.x, y: rot.y, z: rot.z, w: rot.w },
+            linearVelocity: { x: linVel.x, y: linVel.y, z: linVel.z },
+            angularVelocity: { x: angVel.x, y: angVel.y, z: angVel.z }
+        };
+
+        const raceStateName =
+            this.raceManager.state === RaceState.READY ? "READY" :
+            this.raceManager.state === RaceState.RACING ? "RACING" : "FINISHED";
+
+        const raceState: RaceProgressionSnapshot = {
+            state: raceStateName,
+            currentCheckpointId: this.raceManager.currentCheckpointId,
+            totalCheckpoints: this.raceManager.maxCheckpoints,
+            raceTimeMs: this.raceManager.raceTime
+        };
+
+        return {
+            timestampMs,
+            car: carState,
+            progression: raceState
+        };
     }
 
     private fixedUpdate(dt: number): void {
@@ -106,32 +145,48 @@ export class App {
             this.resetRace();
         }
 
-        this.car.update(
-            dt,
-            this.inputManager.isForwardDown,
-            this.inputManager.isBackDown,
-            this.inputManager.isLeftDown,
-            this.inputManager.isRightDown
-        );
+        // Auto-start race when accelerating
+        if (this.raceManager.state === RaceState.READY &&
+            (this.inputManager.isForwardDown || this.inputManager.isBackDown)) {
+            this.raceManager.beginRacing();
+        }
+
+        // Only allow car control if not finished
+        if (this.raceManager.state !== RaceState.FINISHED) {
+            this.car.update(
+                dt,
+                this.inputManager.isForwardDown,
+                this.inputManager.isBackDown,
+                this.inputManager.isLeftDown,
+                this.inputManager.isRightDown
+            );
+        } else {
+            // Apply neutral inputs when finished so car coasts
+            this.car.update(dt, false, false, false, false);
+        }
 
         this.physics.step(dt);
         this.raceManager.update();
         this.inputManager.resetPerFrameInputs();
 
-        // Simple manual trigger check (since Babylon Havok trigger events can be tricky)
+        // Fallback simple manual trigger check (since Havok trigger events can be flaky)
         this.checkManualTriggers();
+
+        // Record ghost snapshot if racing
+        if (this.raceManager.state === RaceState.RACING) {
+            this.ghostBuffer.push(this.createSnapshot(this.raceManager.raceTime));
+        }
     }
 
-    // Fallback manual trigger collision check using simple bounding box intersections.
     private checkManualTriggers(): void {
-        if (!this.raceManager.isRacing) return;
+        if (this.raceManager.state !== RaceState.RACING) return;
 
         const carPos = this.car.mesh.getAbsolutePosition();
 
         for (const cp of this.parsedTrack.checkpoints) {
             if (this.isInVolume(carPos, cp.mesh)) {
                 if (this.raceManager.hitCheckpoint(cp.id)) {
-                    this.ui.showMessage("CHECKPOINT!");
+                    this.ui.showMessage(`CHECKPOINT ${cp.id + 1}!`);
                 }
             }
         }
@@ -152,11 +207,25 @@ export class App {
     }
 
     private renderUpdate(_alpha: number): void {
-        // Camera Follow (simple smoothing)
         this.renderer.camera.lockedTarget = this.car.mesh;
 
         // Update UI
         this.ui.updateSpeed(this.car.getSpeedKmh());
         this.ui.updateTimer(this.raceManager.formatTime(this.raceManager.raceTime));
+
+        // Show status message if Ready or Finished
+        if (this.raceManager.state === RaceState.READY) {
+            this.ui.showPersistentMessage("READY (PRESS W)");
+        } else if (this.raceManager.state === RaceState.FINISHED) {
+            this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\nPRESS R TO RESTART`);
+        } else {
+            this.ui.hidePersistentMessage();
+        }
+
+        // Show progress string (CP: 1/3)
+        // If CP id is 0, they have hit 1 cp. Since the start line doesn't count as a CP, maxCheckpoints means
+        // the number of checkpoints they need to collect before finish.
+        const cpString = `${this.raceManager.currentCheckpointId + 1} / ${this.raceManager.maxCheckpoints}`;
+        this.ui.updateCheckpointProgress(cpString);
     }
 }
