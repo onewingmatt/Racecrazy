@@ -1,0 +1,15 @@
+{
+  "name": "Placeholder Track",
+  "blocks": [
+    { "type": "start", "x": 0, "y": 0, "z": 0, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 0, "z": 1, "rot": 0 },
+    { "type": "checkpoint", "x": 0, "y": 0, "z": 2, "rot": 0 },
+    { "type": "ramp", "x": 0, "y": 0, "z": 3, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 1, "z": 4, "rot": 0 },
+    { "type": "turn", "x": 0, "y": 1, "z": 5, "rot": 0 },
+    { "type": "straight", "x": 1, "y": 1, "z": 5, "rot": 90 },
+    { "type": "ramp", "x": 2, "y": 0, "z": 5, "rot": -90 },
+    { "type": "straight", "x": 3, "y": 0, "z": 5, "rot": 90 },
+    { "type": "finish", "x": 4, "y": 0, "z": 5, "rot": 90 }
+  ]
+}
