@@ -267,7 +267,7 @@ export class App {
 
         // Show status message if Ready or Finished
         if (this.raceManager.state === RaceState.READY) {
-            this.ui.showPersistentMessage("READY\n< PRESS W >");
+            this.ui.showPersistentMessage("READY\n< PRESS W / UP >");
         } else if (this.raceManager.state === RaceState.FINISHED) {
             this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\n< PRESS R TO RESTART >`);
         } else {

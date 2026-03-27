@@ -3,6 +3,7 @@ export class GameLoop {
     private accumulator: number = 0;
     private readonly timeStep: number;
     private isRunning: boolean = false;
+    private animationFrameId: number = 0;
 
     constructor(
         private updateCallback: (dt: number) => void,
@@ -17,6 +18,11 @@ export class GameLoop {
         this.isRunning = true;
         this.lastTime = performance.now() / 1000;
         this.loop(this.lastTime);
+    }
+
+    public stop(): void {
+        this.isRunning = false;
+        cancelAnimationFrame(this.animationFrameId);
     }
 
     private loop = (currentTimeMs: number): void => {
@@ -41,6 +47,6 @@ export class GameLoop {
         const alpha = this.accumulator / this.timeStep;
         this.renderCallback(alpha);
 
-        requestAnimationFrame(this.loop);
+        this.animationFrameId = requestAnimationFrame(this.loop);
     };
 }
