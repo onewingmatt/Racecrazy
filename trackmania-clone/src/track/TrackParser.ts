@@ -11,6 +11,12 @@ export interface ParsedTrack {
     finishVolume: Mesh | null;
 }
 
+interface GridCell {
+    type: string;
+    y: number; // The base height of the block
+    rot: number; // Important for ramps
+}
+
 export class TrackParser {
     constructor(private registry: BlockRegistry) {}
 
@@ -24,12 +30,19 @@ export class TrackParser {
             finishVolume: null
         };
 
+        // 1. Build a spatial map to query neighbors
+        const map = new Map<string, GridCell>();
+        for (const b of data.blocks) {
+            map.set(`${b.x},${b.z}`, { type: b.type, y: b.y, rot: b.rot });
+        }
+
         let cpCount = 0;
 
-        for (const blockData of data.blocks) {
-            const { type, x, y, z, rot } = blockData;
+        // 2. Iterate and spawn blocks + intelligent walls
+        for (const b of data.blocks) {
+            const { type, x, y, z, rot } = b;
 
-            // Visual + Collision block
+            // Visual + Collision block (floor only now)
             const blockMesh = this.registry.createInstance(type, x, y, z, rot);
             parsed.blocks.push(blockMesh);
 
@@ -48,8 +61,90 @@ export class TrackParser {
                 const vol = this.registry.createCheckpointVolume(x, y, z, rot);
                 parsed.finishVolume = vol;
             }
+
+            // 3. Generate Borders for exposed edges
+            // To do this, we figure out the global direction for each local edge (Left, Right, Forward, Back).
+            const isRamp = type === "ramp";
+
+            // Normalize rot to 0, 90, 180, 270
+            const normRot = ((rot % 360) + 360) % 360;
+
+            // Map local directions to world grid offsets
+            const dirMap = this.getDirectionMap(normRot);
+
+            // Evaluate edges
+            this.evaluateEdge(x, y, z, rot, "forward", dirMap["forward"], isRamp, map);
+            this.evaluateEdge(x, y, z, rot, "backward", dirMap["backward"], isRamp, map);
+            this.evaluateEdge(x, y, z, rot, "left", dirMap["left"], isRamp, map);
+            this.evaluateEdge(x, y, z, rot, "right", dirMap["right"], isRamp, map);
         }
 
         return parsed;
+    }
+
+    /**
+     * Determines the world offset (+x, -x, +z, -z) for the local directions of a block rotated by `rot`.
+     */
+    private getDirectionMap(rot: number): { [key: string]: { dx: number, dz: number } } {
+        // Babylon.js default orientation (+Z forward, +X right)
+        // Array order: 0 deg, 90 deg, 180 deg, 270 deg
+        const dirs = [
+            { dx: 0, dz: 1 },  // Forward (0 deg)
+            { dx: 1, dz: 0 },  // Right (90 deg)
+            { dx: 0, dz: -1 }, // Backward (180 deg)
+            { dx: -1, dz: 0 }  // Left (270 deg)
+        ];
+
+        const rIdx = Math.round(rot / 90) % 4;
+
+        return {
+            "forward": dirs[rIdx],
+            "right": dirs[(rIdx + 1) % 4],
+            "backward": dirs[(rIdx + 2) % 4],
+            "left": dirs[(rIdx + 3) % 4],
+        };
+    }
+
+    /**
+     * Checks if a neighbor block exists and seamlessly connects to the specified local edge.
+     * If it does not, a wall instance is generated.
+     */
+    private evaluateEdge(x: number, y: number, z: number, blockRot: number, localEdge: string, worldDir: { dx: number, dz: number }, isRamp: boolean, map: Map<string, GridCell>): void {
+        const nx = x + worldDir.dx;
+        const nz = z + worldDir.dz;
+        const neighbor = map.get(`${nx},${nz}`);
+
+        let isExposed = true;
+
+        if (neighbor) {
+            // Check if they connect smoothly on the Y axis
+            // For a flat block, my top is at my Y.
+            // For a ramp (which slopes upward along its local Forward), the forward edge is at Y+1, backward is at Y.
+            let myEdgeY = y;
+            if (isRamp && localEdge === "forward") myEdgeY = y + 1; // Our ramps go up 1 height step (2m)
+
+            let neighborEdgeY = neighbor.y;
+            const neighborIsRamp = neighbor.type === "ramp";
+
+            if (neighborIsRamp) {
+                // If neighbor is a ramp, figure out if the edge touching me is its high edge or low edge
+                // To do this, check if its Forward vector points towards me (-worldDir)
+                const nNormRot = ((neighbor.rot % 360) + 360) % 360;
+                const nDirs = this.getDirectionMap(nNormRot);
+
+                // If neighbor's forward points opposite to my check direction, it means its high end is touching me
+                if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) {
+                    neighborEdgeY = neighbor.y + 1;
+                }
+            }
+
+            if (myEdgeY === neighborEdgeY) {
+                isExposed = false; // We have a flush neighbor!
+            }
+        }
+
+        if (isExposed) {
+            this.registry.createWallInstance(x, y, z, blockRot, localEdge, isRamp);
+        }
     }
 }
