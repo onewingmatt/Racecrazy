@@ -3,7 +3,10 @@ export class InputManager {
     public isBackDown: boolean = false;
     public isLeftDown: boolean = false;
     public isRightDown: boolean = false;
+
+    // Singular action triggers
     public isRestartDown: boolean = false;
+    public isGhostToggleDown: boolean = false;
 
     constructor() {
         this.attach();
@@ -41,6 +44,9 @@ export class InputManager {
             case "Backspace":
                 this.isRestartDown = true;
                 break;
+            case "KeyG":
+                this.isGhostToggleDown = true;
+                break;
         }
     };
 
@@ -64,13 +70,17 @@ export class InputManager {
                 break;
             case "KeyR":
             case "Backspace":
-                this.isRestartDown = false; // Note: You might want to process a rising edge for this instead.
+                this.isRestartDown = false;
+                break;
+            case "KeyG":
+                this.isGhostToggleDown = false;
                 break;
         }
     };
 
-    // Clear singular press events after frame loop
+    // Clear singular press events after frame loop so they don't trigger rapidly
     public resetPerFrameInputs(): void {
         this.isRestartDown = false;
+        this.isGhostToggleDown = false;
     }
 }

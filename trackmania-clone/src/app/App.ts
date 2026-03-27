@@ -9,6 +9,8 @@ import { InputManager } from "../core/InputManager";
 import { GameLoop } from "../core/GameLoop";
 import { UIOverlay } from "../ui/UIOverlay";
 import { PlayerFrameSnapshot, CarSnapshot, RaceProgressionSnapshot } from "../gameplay/Snapshot";
+import { GhostManager } from "../gameplay/GhostManager";
+import { GhostCar } from "../rendering/GhostCar";
 
 // Sample Track Data
 import trackData from "../data/track.json";
@@ -19,15 +21,18 @@ export class App {
     private registry: BlockRegistry;
     private parser: TrackParser;
     private car!: ArcadeCar;
+    private ghostCar!: GhostCar;
     private raceManager: RaceManager;
+    private ghostManager: GhostManager;
     private inputManager: InputManager;
     private gameLoop: GameLoop;
     private ui: UIOverlay;
 
     private parsedTrack: any;
 
-    // Ghost recording buffer (for demonstration of serialization capability)
+    // Ghost recording buffer for current run
     private ghostBuffer: PlayerFrameSnapshot[] = [];
+    private isGhostEnabled: boolean = true;
 
     constructor() {
         this.renderer = new Renderer();
@@ -36,6 +41,7 @@ export class App {
         this.parser = new TrackParser(this.registry);
 
         this.raceManager = new RaceManager();
+        this.ghostManager = new GhostManager();
         this.inputManager = new InputManager();
         this.ui = new UIOverlay();
 
@@ -54,8 +60,12 @@ export class App {
         // Load Track
         this.parsedTrack = this.parser.parse(trackData as any);
 
-        // Initialize Car
+        // Load best local ghost for this track if it exists
+        this.ghostManager.loadGhost(this.parsedTrack.name);
+
+        // Initialize Cars
         this.car = new ArcadeCar(this.renderer.scene);
+        this.ghostCar = new GhostCar(this.renderer.scene);
 
         // Wait for next frame before setting up physics constraints so Babylon initializes Havok properly
         this.renderer.scene.onBeforeRenderObservable.addOnce(() => {
@@ -90,6 +100,11 @@ export class App {
                     if (this.raceManager.hitFinish()) {
                         this.ui.showMessage("FINISH!");
                         this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime!));
+
+                        // Check if we should save this run as a new ghost
+                        if (this.raceManager.raceTime === this.raceManager.bestTime) {
+                            this.ghostManager.saveGhost(this.parsedTrack.name, this.raceManager.raceTime, this.ghostBuffer);
+                        }
                     }
                 }
             };
@@ -99,17 +114,21 @@ export class App {
     private resetRace(): void {
         this.car.setPosition(this.parsedTrack.startPosition, this.parsedTrack.startRotationDeg);
         this.raceManager.startRace(this.parsedTrack.checkpoints.length);
+
+        // Prepare Ghost logic
         this.ghostBuffer = []; // Clear recorded ghost frames on restart
+        this.ghostManager.resetPlayback();
 
         if (this.raceManager.bestTime) {
             this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime));
         }
+
+        this.updateGhostVisibility();
     }
 
     private createSnapshot(timestampMs: number): PlayerFrameSnapshot {
         // Extract plain data from Babylon structures.
         // This is safe to JSON stringify and send over network or save.
-
         const pos = this.car.mesh.getAbsolutePosition();
         const rot = this.car.mesh.rotationQuaternion || Quaternion.Identity();
         const linVel = this.car.body.getLinearVelocity();
@@ -140,9 +159,25 @@ export class App {
         };
     }
 
+    private updateGhostVisibility(): void {
+        const hasData = this.ghostManager.hasGhost();
+        this.ui.updateGhostStatus(this.isGhostEnabled, hasData);
+
+        if (hasData && this.isGhostEnabled && this.raceManager.state !== RaceState.FINISHED) {
+            this.ghostCar.show();
+        } else {
+            this.ghostCar.hide();
+        }
+    }
+
     private fixedUpdate(dt: number): void {
         if (this.inputManager.isRestartDown) {
             this.resetRace();
+        }
+
+        if (this.inputManager.isGhostToggleDown) {
+            this.isGhostEnabled = !this.isGhostEnabled;
+            this.updateGhostVisibility();
         }
 
         // Auto-start race when accelerating
@@ -163,6 +198,7 @@ export class App {
         } else {
             // Apply neutral inputs when finished so car coasts
             this.car.update(dt, false, false, false, false);
+            this.ghostCar.hide(); // Hide ghost when finished
         }
 
         this.physics.step(dt);
@@ -173,7 +209,7 @@ export class App {
         this.checkManualTriggers();
 
         // Record ghost snapshot if racing
-        if (this.raceManager.state === RaceState.RACING) {
+        if (this.raceManager.state !== RaceState.FINISHED) {
             this.ghostBuffer.push(this.createSnapshot(this.raceManager.raceTime));
         }
     }
@@ -195,6 +231,11 @@ export class App {
              if (this.raceManager.hitFinish()) {
                 this.ui.showMessage("FINISH!");
                 this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime!));
+
+                // Check if we should save this run as a new ghost
+                if (this.raceManager.raceTime === this.raceManager.bestTime) {
+                    this.ghostManager.saveGhost(this.parsedTrack.name, this.raceManager.raceTime, this.ghostBuffer);
+                }
             }
         }
     }
@@ -209,22 +250,31 @@ export class App {
     private renderUpdate(_alpha: number): void {
         this.renderer.camera.lockedTarget = this.car.mesh;
 
+        // Dynamic FOV for speed sense
+        this.renderer.updateCameraForSpeed(this.car.getSpeedKmh());
+
+        // Update Ghost Car visuals
+        if (this.isGhostEnabled && this.ghostManager.hasGhost() && this.raceManager.state === RaceState.RACING) {
+            const playback = this.ghostManager.getPlaybackFrames(this.raceManager.raceTime);
+            if (playback.frameA && playback.frameB) {
+                this.ghostCar.updateInterpolated(playback.frameA.car, playback.frameB.car, playback.alpha);
+            }
+        }
+
         // Update UI
         this.ui.updateSpeed(this.car.getSpeedKmh());
         this.ui.updateTimer(this.raceManager.formatTime(this.raceManager.raceTime));
 
         // Show status message if Ready or Finished
         if (this.raceManager.state === RaceState.READY) {
-            this.ui.showPersistentMessage("READY (PRESS W)");
+            this.ui.showPersistentMessage("READY\n< PRESS W >");
         } else if (this.raceManager.state === RaceState.FINISHED) {
-            this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\nPRESS R TO RESTART`);
+            this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\n< PRESS R TO RESTART >`);
         } else {
             this.ui.hidePersistentMessage();
         }
 
         // Show progress string (CP: 1/3)
-        // If CP id is 0, they have hit 1 cp. Since the start line doesn't count as a CP, maxCheckpoints means
-        // the number of checkpoints they need to collect before finish.
         const cpString = `${this.raceManager.currentCheckpointId + 1} / ${this.raceManager.maxCheckpoints}`;
         this.ui.updateCheckpointProgress(cpString);
     }

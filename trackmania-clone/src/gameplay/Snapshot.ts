@@ -58,3 +58,12 @@ export interface PlayerFrameSnapshot {
     car: CarSnapshot;
     progression: RaceProgressionSnapshot;
 }
+
+/**
+ * A complete recorded run for a specific track, fully JSON-serializable.
+ */
+export interface GhostRunData {
+    trackName: string;
+    totalTimeMs: number;
+    frames: PlayerFrameSnapshot[];
+}

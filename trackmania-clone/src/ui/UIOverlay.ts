@@ -5,12 +5,12 @@ export class UIOverlay {
     private bestTimeElement: HTMLDivElement;
     private messageElement: HTMLDivElement;
 
-    // New persistent status message (e.g. "READY", "FINISHED")
     private persistentMessageElement: HTMLDivElement;
-    // New checkpoint progression (e.g. "CP: 1/3")
     private checkpointProgressElement: HTMLDivElement;
+    private ghostStatusElement: HTMLDivElement;
 
     constructor() {
+        // Base container styling
         this.container = document.createElement("div");
         this.container.style.position = "absolute";
         this.container.style.top = "0";
@@ -18,69 +18,92 @@ export class UIOverlay {
         this.container.style.width = "100%";
         this.container.style.height = "100%";
         this.container.style.pointerEvents = "none";
-        this.container.style.fontFamily = "sans-serif";
-        this.container.style.color = "white";
-        this.container.style.textShadow = "1px 1px 2px black";
 
-        // Speed
+        // Use a thick, slightly italicized sans-serif for arcade feel
+        this.container.style.fontFamily = "Impact, 'Arial Black', sans-serif";
+        this.container.style.fontStyle = "italic";
+        this.container.style.color = "white";
+        // Heavy text stroke/shadow for readability against sky and track
+        this.container.style.textShadow = "-2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 4px 4px 8px rgba(0,0,0,0.8)";
+        this.container.style.userSelect = "none";
+
+        // Speed Indicator
         this.speedElement = document.createElement("div");
         this.speedElement.style.position = "absolute";
-        this.speedElement.style.bottom = "20px";
-        this.speedElement.style.right = "20px";
-        this.speedElement.style.fontSize = "36px";
-        this.speedElement.style.fontWeight = "bold";
+        this.speedElement.style.bottom = "3vh";
+        this.speedElement.style.right = "3vw";
+        this.speedElement.style.fontSize = "min(8vw, 64px)";
+        this.speedElement.style.fontWeight = "900";
+        this.speedElement.style.color = "#FFD700"; // Gold color for speed
 
-        // Timer
+        // Race Timer
         this.timerElement = document.createElement("div");
         this.timerElement.style.position = "absolute";
-        this.timerElement.style.top = "20px";
-        this.timerElement.style.left = "20px";
-        this.timerElement.style.fontSize = "48px";
-        this.timerElement.style.fontWeight = "bold";
+        this.timerElement.style.top = "3vh";
+        this.timerElement.style.left = "3vw";
+        this.timerElement.style.fontSize = "min(10vw, 80px)";
+        this.timerElement.style.fontWeight = "900";
 
         // Best Time
         this.bestTimeElement = document.createElement("div");
         this.bestTimeElement.style.position = "absolute";
-        this.bestTimeElement.style.top = "70px";
-        this.bestTimeElement.style.left = "20px";
-        this.bestTimeElement.style.fontSize = "24px";
-        this.bestTimeElement.style.color = "gold";
+        this.bestTimeElement.style.top = "12vh"; // Under timer
+        this.bestTimeElement.style.left = "3vw";
+        this.bestTimeElement.style.fontSize = "min(4vw, 32px)";
+        this.bestTimeElement.style.color = "#AAAAAA"; // Subtle grey
 
         // Checkpoint Progress
         this.checkpointProgressElement = document.createElement("div");
         this.checkpointProgressElement.style.position = "absolute";
-        this.checkpointProgressElement.style.top = "110px";
-        this.checkpointProgressElement.style.left = "20px";
-        this.checkpointProgressElement.style.fontSize = "20px";
-        this.checkpointProgressElement.style.color = "lightblue";
+        this.checkpointProgressElement.style.top = "18vh";
+        this.checkpointProgressElement.style.left = "3vw";
+        this.checkpointProgressElement.style.fontSize = "min(5vw, 40px)";
+        this.checkpointProgressElement.style.color = "#4DA6FF"; // Light blue
 
-        // Temporary Message (e.g. "CHECKPOINT 1")
+        // Ghost Toggle Status
+        this.ghostStatusElement = document.createElement("div");
+        this.ghostStatusElement.style.position = "absolute";
+        this.ghostStatusElement.style.top = "24vh";
+        this.ghostStatusElement.style.left = "3vw";
+        this.ghostStatusElement.style.fontSize = "min(3vw, 24px)";
+        this.ghostStatusElement.style.color = "#8888FF";
+        this.ghostStatusElement.style.opacity = "0.8";
+
+        // Temporary Pop-up Messages (e.g. "CHECKPOINT 1")
         this.messageElement = document.createElement("div");
         this.messageElement.style.position = "absolute";
-        this.messageElement.style.top = "40%";
+        this.messageElement.style.top = "30%";
         this.messageElement.style.width = "100%";
         this.messageElement.style.textAlign = "center";
-        this.messageElement.style.fontSize = "48px";
-        this.messageElement.style.fontWeight = "bold";
-        this.messageElement.style.color = "yellow";
+        this.messageElement.style.fontSize = "min(12vw, 96px)";
+        this.messageElement.style.fontWeight = "900";
+        this.messageElement.style.color = "#FFCC00";
         this.messageElement.style.opacity = "0";
-        this.messageElement.style.transition = "opacity 0.5s";
+        this.messageElement.style.transition = "opacity 0.3s ease-in-out, transform 0.1s";
+        this.messageElement.style.transform = "scale(0.8)";
 
-        // Persistent Message (e.g. "READY", "FINISHED")
+        // Persistent State Banners (e.g. "READY", "FINISHED")
         this.persistentMessageElement = document.createElement("div");
         this.persistentMessageElement.style.position = "absolute";
-        this.persistentMessageElement.style.top = "50%";
+        this.persistentMessageElement.style.top = "45%";
         this.persistentMessageElement.style.width = "100%";
         this.persistentMessageElement.style.textAlign = "center";
-        this.persistentMessageElement.style.fontSize = "36px";
-        this.persistentMessageElement.style.fontWeight = "bold";
+        this.persistentMessageElement.style.fontSize = "min(8vw, 64px)";
+        this.persistentMessageElement.style.fontWeight = "900";
         this.persistentMessageElement.style.color = "white";
         this.persistentMessageElement.style.whiteSpace = "pre-line"; // Allow newlines
+        // Add a semi-transparent dark banner behind the persistent text for high contrast
+        this.persistentMessageElement.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+        this.persistentMessageElement.style.padding = "20px 0";
+        this.persistentMessageElement.style.borderTop = "4px solid #FF3333";
+        this.persistentMessageElement.style.borderBottom = "4px solid #FF3333";
+        this.persistentMessageElement.style.boxShadow = "0px 10px 20px rgba(0,0,0,0.5)";
 
         this.container.appendChild(this.speedElement);
         this.container.appendChild(this.timerElement);
         this.container.appendChild(this.bestTimeElement);
         this.container.appendChild(this.checkpointProgressElement);
+        this.container.appendChild(this.ghostStatusElement);
         this.container.appendChild(this.messageElement);
         this.container.appendChild(this.persistentMessageElement);
 
@@ -96,19 +119,29 @@ export class UIOverlay {
     }
 
     public updateBestTime(timeStr: string | null): void {
-        this.bestTimeElement.innerText = timeStr ? `Best: ${timeStr}` : "";
+        this.bestTimeElement.innerText = timeStr ? `BEST  ${timeStr}` : "";
     }
 
     public updateCheckpointProgress(progress: string): void {
         this.checkpointProgressElement.innerText = `CP: ${progress}`;
     }
 
-    public showMessage(text: string, durationMs: number = 2000): void {
+    public updateGhostStatus(enabled: boolean, hasData: boolean): void {
+        if (!hasData) {
+            this.ghostStatusElement.innerText = "";
+            return;
+        }
+        this.ghostStatusElement.innerText = enabled ? "GHOST: ON [G]" : "GHOST: OFF [G]";
+    }
+
+    public showMessage(text: string, durationMs: number = 1500): void {
         this.messageElement.innerText = text;
         this.messageElement.style.opacity = "1";
+        this.messageElement.style.transform = "scale(1.0)"; // Slight pop effect
 
         setTimeout(() => {
             this.messageElement.style.opacity = "0";
+            this.messageElement.style.transform = "scale(0.8)";
         }, durationMs);
     }
 
