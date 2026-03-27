@@ -63,14 +63,14 @@ export class TrackParser {
             }
 
             // 3. Generate Borders for exposed edges
-            // To do this, we figure out the global direction for each local edge (Left, Right, Forward, Back).
+            // Normalize rot to 0, 90, 180, 270 (handles negative and wrapped degrees)
+            const normRot = ((rot % 360) + 360) % 360;
+            const rIdx = Math.round(normRot / 90) % 4;
+
             const isRamp = type === "ramp";
 
-            // Normalize rot to 0, 90, 180, 270
-            const normRot = ((rot % 360) + 360) % 360;
-
             // Map local directions to world grid offsets
-            const dirMap = this.getDirectionMap(normRot);
+            const dirMap = this.getDirectionMap(rIdx);
 
             // Evaluate edges
             this.evaluateEdge(x, y, z, rot, "forward", dirMap["forward"], isRamp, map);
@@ -85,17 +85,14 @@ export class TrackParser {
     /**
      * Determines the world offset (+x, -x, +z, -z) for the local directions of a block rotated by `rot`.
      */
-    private getDirectionMap(rot: number): { [key: string]: { dx: number, dz: number } } {
-        // Babylon.js default orientation (+Z forward, +X right)
-        // Array order: 0 deg, 90 deg, 180 deg, 270 deg
+    private getDirectionMap(rIdx: number): { [key: string]: { dx: number, dz: number } } {
+        // Array order: 0 deg (+Z forward), 90 deg (+X forward), 180 deg (-Z forward), 270 deg (-X forward)
         const dirs = [
-            { dx: 0, dz: 1 },  // Forward (0 deg)
-            { dx: 1, dz: 0 },  // Right (90 deg)
-            { dx: 0, dz: -1 }, // Backward (180 deg)
-            { dx: -1, dz: 0 }  // Left (270 deg)
+            { dx: 0, dz: 1 },  // +Z
+            { dx: 1, dz: 0 },  // +X
+            { dx: 0, dz: -1 }, // -Z
+            { dx: -1, dz: 0 }  // -X
         ];
-
-        const rIdx = Math.round(rot / 90) % 4;
 
         return {
             "forward": dirs[rIdx],
@@ -118,8 +115,6 @@ export class TrackParser {
 
         if (neighbor) {
             // Check if they connect smoothly on the Y axis
-            // For a flat block, my top is at my Y.
-            // For a ramp (which slopes upward along its local Forward), the forward edge is at Y+1, backward is at Y.
             let myEdgeY = y;
             if (isRamp && localEdge === "forward") myEdgeY = y + 1; // Our ramps go up 1 height step (2m)
 
@@ -128,9 +123,9 @@ export class TrackParser {
 
             if (neighborIsRamp) {
                 // If neighbor is a ramp, figure out if the edge touching me is its high edge or low edge
-                // To do this, check if its Forward vector points towards me (-worldDir)
                 const nNormRot = ((neighbor.rot % 360) + 360) % 360;
-                const nDirs = this.getDirectionMap(nNormRot);
+                const nIdx = Math.round(nNormRot / 90) % 4;
+                const nDirs = this.getDirectionMap(nIdx);
 
                 // If neighbor's forward points opposite to my check direction, it means its high end is touching me
                 if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) {

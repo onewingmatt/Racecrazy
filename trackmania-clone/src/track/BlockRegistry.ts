@@ -1,4 +1,4 @@
-import { MeshBuilder, StandardMaterial, Color3, Scene, Vector3, Mesh, InstancedMesh } from "@babylonjs/core";
+import { MeshBuilder, StandardMaterial, Color3, Scene, Vector3, Mesh, InstancedMesh, TransformNode } from "@babylonjs/core";
 import { PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core/Physics/v2";
 
 export class BlockRegistry {
@@ -17,11 +17,9 @@ export class BlockRegistry {
         const roadMat = new StandardMaterial("roadMat", this.scene);
         roadMat.diffuseColor = new Color3(0.25, 0.25, 0.25);
 
-        // Wall/Border material - highly visible
         const borderMat = new StandardMaterial("borderMat", this.scene);
-        borderMat.diffuseColor = new Color3(0.9, 0.9, 0.9); // White/light grey guardrail
+        borderMat.diffuseColor = new Color3(0.9, 0.9, 0.9);
 
-        // Dark accent for bottom trim
         const trimMat = new StandardMaterial("trimMat", this.scene);
         trimMat.diffuseColor = new Color3(0.1, 0.1, 0.1);
 
@@ -46,40 +44,54 @@ export class BlockRegistry {
     public initializeBaseMeshes(): void {
         const s = BlockRegistry.GRID_SIZE;
         const h = BlockRegistry.HEIGHT_STEP;
+        const floorThickness = 0.1; // Thinner floor to minimize gaps at ramp hinges
 
-        // --- Core Track Blocks (Flat, no built-in walls anymore to allow cohesive merging) ---
+        // --- Core Track Blocks ---
 
-        const straight = MeshBuilder.CreateBox("base_straight", { width: s, depth: s, height: 0.5 }, this.scene);
+        const straight = MeshBuilder.CreateBox("base_straight", { width: s, depth: s, height: floorThickness }, this.scene);
+        straight.position.y = floorThickness / 2; // Bottom sits exactly at Y=0
+        straight.bakeCurrentTransformIntoVertices();
         straight.material = this.materials["road"];
         straight.isVisible = false;
         new PhysicsAggregate(straight, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["straight"] = straight;
 
-        const start = MeshBuilder.CreateBox("base_start", { width: s, depth: s, height: 0.5 }, this.scene);
+        const start = MeshBuilder.CreateBox("base_start", { width: s, depth: s, height: floorThickness }, this.scene);
+        start.position.y = floorThickness / 2;
+        start.bakeCurrentTransformIntoVertices();
         start.material = this.materials["start"];
         start.isVisible = false;
         new PhysicsAggregate(start, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["start"] = start;
 
-        const finish = MeshBuilder.CreateBox("base_finish", { width: s, depth: s, height: 0.5 }, this.scene);
+        const finish = MeshBuilder.CreateBox("base_finish", { width: s, depth: s, height: floorThickness }, this.scene);
+        finish.position.y = floorThickness / 2;
+        finish.bakeCurrentTransformIntoVertices();
         finish.material = this.materials["finish"];
         finish.isVisible = false;
         new PhysicsAggregate(finish, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["finish"] = finish;
 
-        const turn = MeshBuilder.CreateBox("base_turn", { width: s, depth: s, height: 0.5 }, this.scene);
+        const turn = MeshBuilder.CreateBox("base_turn", { width: s, depth: s, height: floorThickness }, this.scene);
+        turn.position.y = floorThickness / 2;
+        turn.bakeCurrentTransformIntoVertices();
         turn.material = this.materials["road"];
         turn.isVisible = false;
         new PhysicsAggregate(turn, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["turn"] = turn;
 
         // Ramp (Slope)
+        // Perfectly hinge at (0,0,-s/2) and slope up to (0,h,s/2).
         const rampDepth = Math.sqrt(s*s + h*h);
-        const simpleRamp = MeshBuilder.CreateBox("base_ramp", { width: s, depth: rampDepth, height: 0.5 }, this.scene);
+        const simpleRamp = MeshBuilder.CreateBox("base_ramp", { width: s, depth: rampDepth, height: floorThickness }, this.scene);
         const angle = Math.atan2(h, s);
         simpleRamp.rotation.x = -angle;
-        simpleRamp.position.y = h / 2;
-        simpleRamp.position.z = s / 2;
+        simpleRamp.position.y = h / 2; // Center Y
+        // Offset center Z forward slightly because the hypotenuse is longer than the base 's'
+        // Actually, the pivot point is bottom backward edge.
+        // Let's use a simple approach: position so its bounding box fits perfectly in s x h x s
+        simpleRamp.position.y += floorThickness/2;
+        // We will keep it simple and just tilt it from the center. It will overlap the floor slightly, but thin floor hides it.
         simpleRamp.bakeCurrentTransformIntoVertices();
         simpleRamp.material = this.materials["road"];
         simpleRamp.isVisible = false;
@@ -87,46 +99,51 @@ export class BlockRegistry {
         new PhysicsAggregate(simpleRamp, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["ramp"] = simpleRamp;
 
-        const checkpoint = MeshBuilder.CreateBox("base_checkpoint", { width: s, depth: s, height: 0.5 }, this.scene);
-        checkpoint.material = this.materials["road"]; // Road color, we use trigger volume for blue
+        const checkpoint = MeshBuilder.CreateBox("base_checkpoint", { width: s, depth: s, height: floorThickness }, this.scene);
+        checkpoint.position.y = floorThickness / 2;
+        checkpoint.bakeCurrentTransformIntoVertices();
+        checkpoint.material = this.materials["road"];
         checkpoint.isVisible = false;
         new PhysicsAggregate(checkpoint, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["checkpoint"] = checkpoint;
 
         // --- Walls & Borders (Spawned conditionally on exposed edges) ---
-
-        // Flat Wall (spans X axis, so it sits on the forward/backward edges if rotated, or left/right if not)
-        // We will make a generic wall that sits on the +X edge (Right side).
+        // A wall sits ON the edge of a block.
+        // If a block is at (0,0,0) with size 10x10, its "Right" edge is at X = 5.
+        // We build the generic wall mesh to be centered at (0,0,0) and we'll translate it when spawning.
         const wallThickness = 0.4;
-        const wallHeight = 1.2;
+        const wallHeight = 1.0;
 
+        // Flat Wall
         const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s, height: wallHeight }, this.scene);
         flatWallRail.position.y = wallHeight / 2;
         flatWallRail.material = this.materials["border"];
 
-        const flatWallTrim = MeshBuilder.CreateBox("wall_trim", { width: wallThickness + 0.1, depth: s, height: 0.4 }, this.scene);
-        flatWallTrim.position.y = 0.2;
-        flatWallTrim.material = this.materials["trim"];
+        // Dark corner posts to hide seams
+        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness + 0.1, depth: wallThickness + 0.1, height: wallHeight }, this.scene);
+        postZ1.position.y = wallHeight / 2;
+        postZ1.position.z = s / 2;
+        postZ1.material = this.materials["trim"];
 
-        const flatWall = Mesh.MergeMeshes([flatWallRail, flatWallTrim], true, true, undefined, false, true)!;
+        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness + 0.1, depth: wallThickness + 0.1, height: wallHeight }, this.scene);
+        postZ2.position.y = wallHeight / 2;
+        postZ2.position.z = -s / 2;
+        postZ2.material = this.materials["trim"];
+
+        const flatWall = Mesh.MergeMeshes([flatWallRail, postZ1, postZ2], true, true, undefined, false, true)!;
         flatWall.name = "wall_flat";
         flatWall.isVisible = false;
         new PhysicsAggregate(flatWall, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.wallMeshes["flat"] = flatWall;
 
-        // Sloped Wall for Ramps (sits on the +X edge of a ramp)
+        // Sloped Wall for Ramps
         const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth, height: wallHeight }, this.scene);
         slopedWallRail.position.y = wallHeight / 2;
         slopedWallRail.material = this.materials["border"];
 
-        const slopedWallTrim = MeshBuilder.CreateBox("wall_trim_ramp", { width: wallThickness + 0.1, depth: rampDepth, height: 0.4 }, this.scene);
-        slopedWallTrim.position.y = 0.2;
-        slopedWallTrim.material = this.materials["trim"];
-
-        const slopedWall = Mesh.MergeMeshes([slopedWallRail, slopedWallTrim], true, true, undefined, false, true)!;
+        const slopedWall = Mesh.MergeMeshes([slopedWallRail], true, true, undefined, false, true)!;
         slopedWall.rotation.x = -angle;
         slopedWall.position.y = h / 2;
-        slopedWall.position.z = s / 2;
         slopedWall.bakeCurrentTransformIntoVertices();
 
         slopedWall.name = "wall_ramp";
@@ -160,7 +177,6 @@ export class BlockRegistry {
     /**
      * Spawns a wall instance on a specific local edge of a block.
      * edge: "left", "right", "forward", "backward"
-     * isRamp: true if the block is a ramp (uses sloped wall)
      */
     public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, isRamp: boolean): InstancedMesh {
         const wallType = isRamp && (localEdge === "left" || localEdge === "right") ? "ramp" : "flat";
@@ -171,50 +187,38 @@ export class BlockRegistry {
         const s = BlockRegistry.GRID_SIZE;
         const offset = s / 2;
 
-        // Start at block center
-        instance.position = new Vector3(x * s, y * BlockRegistry.HEIGHT_STEP, z * s);
+        // Create a dummy node representing the center of the block
+        const blockNode = new TransformNode("dummy", this.scene);
+        blockNode.position = new Vector3(x * s, y * BlockRegistry.HEIGHT_STEP, z * s);
+        blockNode.rotation.y = blockRotationDeg * (Math.PI / 180);
 
-        // Determine local offset and rotation based on the edge requested
-        // The base wall is designed to sit on the Right (+X) edge facing forward.
-        let localPos = new Vector3(0, 0, 0);
-        let localRotY = 0;
+        // Parent the wall to the block, apply local offset/rotation, then bake to world.
+        instance.parent = blockNode;
 
         switch (localEdge) {
             case "right":
-                localPos.x = offset;
-                localRotY = 0;
+                instance.position.x = offset;
+                instance.rotation.y = 0;
                 break;
             case "left":
-                localPos.x = -offset;
-                // If it's a ramp, we need to flip it 180 on Y but keep the slope orientation?
-                // Actually, our sloped wall is baked with rotation.x = -angle.
-                // Rotating Y by 180 would invert the slope!
-                // So for left wall on a ramp, it's just shifted -X, rotation stays 0.
-                localRotY = 0;
+                instance.position.x = -offset;
+                instance.rotation.y = 0;
                 break;
             case "forward":
-                localPos.z = offset;
-                localRotY = -90;
+                instance.position.z = offset;
+                instance.rotation.y = Math.PI / 2;
                 break;
             case "backward":
-                localPos.z = -offset;
-                localRotY = -90; // Or 90, doesn't matter for a flat symmetric wall
+                instance.position.z = -offset;
+                instance.rotation.y = Math.PI / 2;
                 break;
         }
 
-        // Apply block's world rotation to the local offsets
-        const rad = blockRotationDeg * (Math.PI / 180);
-        const cos = Math.cos(rad);
-        const sin = Math.sin(rad);
+        instance.computeWorldMatrix(true);
 
-        const worldOffsetX = localPos.x * cos + localPos.z * sin;
-        const worldOffsetZ = -localPos.x * sin + localPos.z * cos;
-
-        instance.position.x += worldOffsetX;
-        instance.position.z += worldOffsetZ;
-
-        // Add local wall rotation to block rotation
-        instance.rotation.y = rad + (localRotY * (Math.PI / 180));
+        // Remove parent and keep absolute position/rotation
+        instance.setParent(null);
+        blockNode.dispose();
 
         new PhysicsAggregate(instance, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
