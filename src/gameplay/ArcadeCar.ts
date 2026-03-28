@@ -59,6 +59,20 @@ export class ArcadeCar {
     private steerAngle = 0;
     private isGrounded = false;
 
+    // Pre-allocated vectors for hot-paths
+    private _upVec = Vector3.Zero();
+    private _forwardVec = Vector3.Zero();
+    private _rightVec = Vector3.Zero();
+    private _downVec = Vector3.Zero();
+    private _vel = Vector3.Zero();
+    private _angVel = Vector3.Zero();
+    private _yawChange = Vector3.Zero();
+    private _brakeForce = Vector3.Zero();
+    private _gripImpulse = Vector3.Zero();
+    private _alignTorqueDir = Vector3.Zero();
+    private _tempVec1 = Vector3.Zero();
+    private _worldUp = Vector3.Up();
+
     constructor(private scene: Scene, config?: Partial<ArcadeCarConfig>) {
         this.config = { ...DEFAULT_CONFIG, ...config };
 
@@ -80,8 +94,8 @@ export class ArcadeCar {
     }
 
     public update(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean): void {
-        const vel = this.body.getLinearVelocity();
-        this.currentSpeedMs = vel.length();
+        this.body.getLinearVelocityToRef(this._vel);
+        this.currentSpeedMs = this._vel.length();
         const currentSpeedKmh = this.getSpeedKmh();
 
         this.checkGrounded();
@@ -91,14 +105,14 @@ export class ArcadeCar {
         const transform = this.mesh.getWorldMatrix();
 
         // Extract direction vectors from the car's rotation matrix
-        const upVec = Vector3.TransformNormal(Vector3.Up(), transform);
-        const forwardVec = Vector3.TransformNormal(Vector3.Forward(), transform);
-        const rightVec = Vector3.TransformNormal(Vector3.Right(), transform);
+        Vector3.TransformNormalToRef(Vector3.Up(), transform, this._upVec);
+        Vector3.TransformNormalToRef(Vector3.Forward(), transform, this._forwardVec);
+        Vector3.TransformNormalToRef(Vector3.Right(), transform, this._rightVec);
 
         if (this.isGrounded) {
-            this.handleGrounded(_dt, forward, back, left, right, vel, forwardVec, rightVec, upVec, currentSpeedKmh);
+            this.handleGrounded(_dt, forward, back, left, right, this._vel, this._forwardVec, this._rightVec, this._upVec, currentSpeedKmh);
         } else {
-            this.handleAirborne(_dt, forward, back, left, right, upVec, rightVec, forwardVec);
+            this.handleAirborne(_dt, forward, back, left, right, this._upVec, this._rightVec, this._forwardVec);
         }
     }
 
@@ -106,12 +120,11 @@ export class ArcadeCar {
         const pos = this.mesh.getAbsolutePosition();
 
         this.mesh.computeWorldMatrix(true);
-        const downVec = Vector3.TransformNormal(Vector3.Down(), this.mesh.getWorldMatrix()).normalize();
-
-        const origin = pos.clone();
+        Vector3.TransformNormalToRef(Vector3.Down(), this.mesh.getWorldMatrix(), this._downVec);
+        this._downVec.normalize();
 
         // create picking ray
-        const ray = new Ray(origin, downVec, this.config.groundCheckDistance);
+        const ray = new Ray(pos, this._downVec, this.config.groundCheckDistance);
 
         // This picks any mesh. To avoid picking the car itself, we filter.
         const pickResult = this.scene.pickWithRay(ray, (mesh) => mesh !== this.mesh);
@@ -120,7 +133,8 @@ export class ArcadeCar {
     }
 
     private applyTorque(body: PhysicsBody, torque: Vector3): void {
-         body.applyAngularImpulse(torque.scale(1/60));
+         torque.scaleToRef(1/60, this._tempVec1);
+         body.applyAngularImpulse(this._tempVec1);
     }
 
     private handleGrounded(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean, vel: Vector3, forwardVec: Vector3, rightVec: Vector3, upVec: Vector3, currentSpeedKmh: number): void {
@@ -143,64 +157,75 @@ export class ArcadeCar {
             const dotForward = Vector3.Dot(vel, forwardVec);
             const reverseFactor = dotForward < -0.1 ? -1 : 1;
 
-            const angVel = this.body.getAngularVelocity();
-            const yawChange = upVec.scale(this.steerAngle * reverseFactor);
+            this.body.getAngularVelocityToRef(this._angVel);
+            upVec.scaleToRef(this.steerAngle * reverseFactor, this._yawChange);
 
-            this.body.setAngularVelocity(angVel.add(yawChange.scale(0.5)));
+            this._yawChange.scaleToRef(0.5, this._tempVec1);
+            this._angVel.addInPlace(this._tempVec1);
+            this.body.setAngularVelocity(this._angVel);
         }
 
         // --- ACCELERATION / BRAKING ---
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
+        const pos = this.mesh.getAbsolutePosition();
 
         if (forward && this.currentSpeedMs < maxSpeedMs) {
             const forceRamp = 1.0 - (this.currentSpeedMs / maxSpeedMs);
             const appliedForce = this.config.accelerationForce * Math.max(0.1, forceRamp);
-            this.body.applyForce(forwardVec.scale(appliedForce), this.mesh.getAbsolutePosition());
+            forwardVec.scaleToRef(appliedForce, this._tempVec1);
+            this.body.applyForce(this._tempVec1, pos);
         }
 
         if (back) {
             const dotForward = Vector3.Dot(vel, forwardVec);
             if (dotForward > 1) {
-                const brakeForce = vel.clone().normalize().scale(-this.config.brakingForce);
-                this.body.applyForce(brakeForce, this.mesh.getAbsolutePosition());
+                vel.normalizeToRef(this._brakeForce);
+                this._brakeForce.scaleInPlace(-this.config.brakingForce);
+                this.body.applyForce(this._brakeForce, pos);
             } else {
-                this.body.applyForce(forwardVec.scale(-this.config.reverseForce), this.mesh.getAbsolutePosition());
+                forwardVec.scaleToRef(-this.config.reverseForce, this._tempVec1);
+                this.body.applyForce(this._tempVec1, pos);
             }
         }
 
         // --- GRIP (Cancel lateral velocity) ---
         const latVel = Vector3.Dot(vel, rightVec);
         if (Math.abs(latVel) > 0.1) {
-            const gripImpulse = rightVec.scale(-latVel * this.config.mass * this.config.lateralGrip);
-            this.body.applyImpulse(gripImpulse, this.mesh.getAbsolutePosition());
+            rightVec.scaleToRef(-latVel * this.config.mass * this.config.lateralGrip, this._gripImpulse);
+            this.body.applyImpulse(this._gripImpulse, pos);
         }
 
         // --- DOWNFORCE ---
         if (currentSpeedKmh > 50) {
             const df = -this.config.downforceFactor * (currentSpeedKmh / 50);
-            this.body.applyForce(upVec.scale(df), this.mesh.getAbsolutePosition());
+            upVec.scaleToRef(df, this._tempVec1);
+            this.body.applyForce(this._tempVec1, pos);
         }
     }
 
     private handleAirborne(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean, upVec: Vector3, rightVec: Vector3, forwardVec: Vector3): void {
         // --- AIR CONTROL ---
         if (forward) {
-             this.applyTorque(this.body, rightVec.scale(this.config.airPitchForce));
+             rightVec.scaleToRef(this.config.airPitchForce, this._tempVec1);
+             this.applyTorque(this.body, this._tempVec1);
         } else if (back) {
-             this.applyTorque(this.body, rightVec.scale(-this.config.airPitchForce));
+             rightVec.scaleToRef(-this.config.airPitchForce, this._tempVec1);
+             this.applyTorque(this.body, this._tempVec1);
         }
 
         if (left) {
-             this.applyTorque(this.body, forwardVec.scale(this.config.airRollForce));
+             forwardVec.scaleToRef(this.config.airRollForce, this._tempVec1);
+             this.applyTorque(this.body, this._tempVec1);
         } else if (right) {
-             this.applyTorque(this.body, forwardVec.scale(-this.config.airRollForce));
+             forwardVec.scaleToRef(-this.config.airRollForce, this._tempVec1);
+             this.applyTorque(this.body, this._tempVec1);
         }
 
         // --- AUTO LEVELING ---
-        const worldUp = Vector3.Up();
-        const alignTorqueDir = Vector3.Cross(upVec, worldUp);
-        if (alignTorqueDir.lengthSquared() > 0.001) {
-            this.applyTorque(this.body, alignTorqueDir.scale(this.config.autoLevelForce));
+        Vector3.CrossToRef(upVec, this._worldUp, this._alignTorqueDir);
+        if (this._alignTorqueDir.lengthSquared() > 0.001) {
+            this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
+            this.applyTorque(this.body, this._tempVec1);
         }
     }
 

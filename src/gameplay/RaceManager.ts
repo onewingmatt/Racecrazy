@@ -120,6 +120,6 @@ export class RaceManager {
         const sec = totalSec % 60;
         const millis = Math.floor(ms % 1000);
 
-        return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}.${millis.toString().padStart(3, '0')}`;
+        return `${min.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}.${millis.toString().padStart(3, "0")}`;
     }
 }
