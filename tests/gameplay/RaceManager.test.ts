@@ -92,6 +92,23 @@ describe("RaceManager", () => {
         expect(raceManager.bestTime).toBeGreaterThan(0);
     });
 
+
+    it("should ignore invalid best time in localStorage", () => {
+        const store: any = {
+            "trackmania_clone_best_time": "invalid_time"
+        };
+        global.localStorage = {
+            getItem: vi.fn((key) => store[key] || null),
+            setItem: vi.fn((key, value) => { store[key] = value.toString(); }),
+            clear: vi.fn(),
+            removeItem: vi.fn(),
+            length: 0,
+            key: vi.fn()
+        } as unknown as Storage;
+
+        const newRaceManager = new RaceManager();
+        expect(newRaceManager.bestTime).toBeNull();
+    });
     it("should reset completely when startRace is called again", () => {
         raceManager.startRace(2);
         raceManager.beginRacing();
