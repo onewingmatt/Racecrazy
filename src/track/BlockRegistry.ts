@@ -53,7 +53,6 @@ export class BlockRegistry {
         straight.bakeCurrentTransformIntoVertices();
         straight.material = this.materials["road"];
         straight.isVisible = false;
-        new PhysicsAggregate(straight, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["straight"] = straight;
 
         const start = MeshBuilder.CreateBox("base_start", { width: s, depth: s, height: floorThickness }, this.scene);
@@ -61,7 +60,6 @@ export class BlockRegistry {
         start.bakeCurrentTransformIntoVertices();
         start.material = this.materials["start"];
         start.isVisible = false;
-        new PhysicsAggregate(start, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["start"] = start;
 
         const finish = MeshBuilder.CreateBox("base_finish", { width: s, depth: s, height: floorThickness }, this.scene);
@@ -69,7 +67,6 @@ export class BlockRegistry {
         finish.bakeCurrentTransformIntoVertices();
         finish.material = this.materials["finish"];
         finish.isVisible = false;
-        new PhysicsAggregate(finish, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["finish"] = finish;
 
         const turn = MeshBuilder.CreateBox("base_turn", { width: s, depth: s, height: floorThickness }, this.scene);
@@ -77,7 +74,6 @@ export class BlockRegistry {
         turn.bakeCurrentTransformIntoVertices();
         turn.material = this.materials["road"];
         turn.isVisible = false;
-        new PhysicsAggregate(turn, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["turn"] = turn;
 
         // Ramp (Slope)
@@ -96,7 +92,6 @@ export class BlockRegistry {
         simpleRamp.material = this.materials["road"];
         simpleRamp.isVisible = false;
 
-        new PhysicsAggregate(simpleRamp, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["ramp"] = simpleRamp;
 
         const checkpoint = MeshBuilder.CreateBox("base_checkpoint", { width: s, depth: s, height: floorThickness }, this.scene);
@@ -104,7 +99,6 @@ export class BlockRegistry {
         checkpoint.bakeCurrentTransformIntoVertices();
         checkpoint.material = this.materials["road"];
         checkpoint.isVisible = false;
-        new PhysicsAggregate(checkpoint, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.baseMeshes["checkpoint"] = checkpoint;
 
         // --- Walls & Borders (Spawned conditionally on exposed edges) ---
@@ -133,7 +127,6 @@ export class BlockRegistry {
         const flatWall = Mesh.MergeMeshes([flatWallRail, postZ1, postZ2], true, true, undefined, false, true)!;
         flatWall.name = "wall_flat";
         flatWall.isVisible = false;
-        new PhysicsAggregate(flatWall, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.wallMeshes["flat"] = flatWall;
 
         // Sloped Wall for Ramps
@@ -148,7 +141,6 @@ export class BlockRegistry {
 
         slopedWall.name = "wall_ramp";
         slopedWall.isVisible = false;
-        new PhysicsAggregate(slopedWall, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
         this.wallMeshes["ramp"] = slopedWall;
     }
 
