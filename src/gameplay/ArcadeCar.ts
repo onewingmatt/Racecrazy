@@ -72,6 +72,7 @@ export class ArcadeCar {
     private _alignTorqueDir = Vector3.Zero();
     private _tempVec1 = Vector3.Zero();
     private _worldUp = Vector3.Up();
+    private _groundRay = new Ray(Vector3.Zero(), Vector3.Zero(), 0);
 
     constructor(private scene: Scene, config?: Partial<ArcadeCarConfig>) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -123,11 +124,13 @@ export class ArcadeCar {
         Vector3.TransformNormalToRef(Vector3.Down(), this.mesh.getWorldMatrix(), this._downVec);
         this._downVec.normalize();
 
-        // create picking ray
-        const ray = new Ray(pos, this._downVec, this.config.groundCheckDistance);
+        // update picking ray
+        this._groundRay.origin.copyFrom(pos);
+        this._groundRay.direction.copyFrom(this._downVec);
+        this._groundRay.length = this.config.groundCheckDistance;
 
         // This picks any mesh. To avoid picking the car itself, we filter.
-        const pickResult = this.scene.pickWithRay(ray, (mesh) => mesh !== this.mesh);
+        const pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
 
         this.isGrounded = pickResult?.hit ?? false;
     }
