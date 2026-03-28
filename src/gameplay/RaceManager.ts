@@ -107,7 +107,10 @@ export class RaceManager {
         try {
             const stored = localStorage.getItem("trackmania_clone_best_time");
             if (stored) {
-                this.bestTime = parseFloat(stored);
+                const parsedTime = parseFloat(stored);
+                if (!isNaN(parsedTime) && isFinite(parsedTime)) {
+                    this.bestTime = parsedTime;
+                }
             }
         } catch (e) {
             console.warn("Could not load best time from localStorage", e);
