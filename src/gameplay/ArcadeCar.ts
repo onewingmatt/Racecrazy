@@ -84,8 +84,8 @@ export class ArcadeCar {
 
         const aggregate = new PhysicsAggregate(this.mesh, PhysicsShapeType.BOX, {
             mass: this.config.mass,
-            friction: 0.5,
-            restitution: 0.1
+            friction: 0.0, // Smooth out ramp transitions by removing surface friction
+            restitution: 0.0 // Prevent bouncing on sharp edges
         }, this.scene);
         this.body = aggregate.body;
 
