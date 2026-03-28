@@ -46,3 +46,7 @@ The codebase is organized into modular domains:
 3.  **Local & Remote Leaderboards**: Integrate a lightweight backend to store best times globally.
 4.  **In-Browser Track Editor**: Create a UI to place blocks visually and export the JSON.
 5.  **Multiplayer Ghost Sync**: Send compressed input or state snapshots to a relay server to see other players in real-time.
+## Developer Notes
+
+**Track Selection:**
+Currently, the track layout is hardcoded to load from `src/data/track.json`. To test the newly added "The Long Run" track (which features multiple checkpoints, ramps, and turns), simply run the game using `npm run dev`. To build additional tracks, replace or modify the `blocks` array in `track.json` following the established 10x10m grid schema.
