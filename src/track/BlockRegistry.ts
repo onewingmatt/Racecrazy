@@ -229,7 +229,7 @@ export class BlockRegistry {
         volume.material = this.materials["checkpoint"];
         volume.isVisible = false;
 
-        new PhysicsAggregate(volume, PhysicsShapeType.BOX, { mass: 0 }, this.scene);
+        // new PhysicsAggregate(volume, PhysicsShapeType.BOX, { mass: 0 }, this.scene); // REMOVED to prevent invisible walls. Collision relies on manual distance checks in App.ts.
         return volume;
     }
 }
