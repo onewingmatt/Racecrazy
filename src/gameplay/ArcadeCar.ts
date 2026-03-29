@@ -14,6 +14,7 @@ export interface ArcadeCarConfig {
     baseTurnSpeed: number;
     highSpeedTurnFactor: number;
     turnSpeedRampKmh: number;
+    lowSpeedSteerRampKmh: number;
 
     // Grip & Handling
     lateralGrip: number;
@@ -39,6 +40,7 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     baseTurnSpeed: 3.5,
     highSpeedTurnFactor: 0.4,
     turnSpeedRampKmh: 120,
+    lowSpeedSteerRampKmh: 20,
 
     lateralGrip: 0.95,
     downforceFactor: 150,
@@ -143,11 +145,11 @@ export class ArcadeCar {
     private handleGrounded(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean, vel: Vector3, forwardVec: Vector3, rightVec: Vector3, upVec: Vector3, currentSpeedKmh: number): void {
         // --- STEERING ---
         let steerMultiplier = 1.0;
-        if (currentSpeedKmh > 10) {
-            const speedRatio = Math.min(1.0, currentSpeedKmh / this.config.turnSpeedRampKmh);
+        if (currentSpeedKmh < this.config.lowSpeedSteerRampKmh) {
+            steerMultiplier = Math.max(0.01, currentSpeedKmh / this.config.lowSpeedSteerRampKmh);
+        } else {
+            const speedRatio = Math.min(1.0, (currentSpeedKmh - this.config.lowSpeedSteerRampKmh) / (this.config.turnSpeedRampKmh - this.config.lowSpeedSteerRampKmh));
             steerMultiplier = 1.0 - (1.0 - this.config.highSpeedTurnFactor) * speedRatio;
-        } else if (currentSpeedKmh < 1) {
-             steerMultiplier = 0;
         }
 
         const turnSpeed = this.config.baseTurnSpeed * steerMultiplier;
