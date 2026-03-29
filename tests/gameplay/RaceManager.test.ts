@@ -119,4 +119,13 @@ describe("RaceManager", () => {
         expect(raceManager.state).toBe(RaceState.READY);
         expect(raceManager.currentCheckpointId).toBe(-1);
     });
+
+    it("should properly format milliseconds into MM:SS.mmm", () => {
+        expect(raceManager.formatTime(0)).toBe("00:00.000");
+        expect(raceManager.formatTime(500)).toBe("00:00.500");
+        expect(raceManager.formatTime(1500)).toBe("00:01.500");
+        expect(raceManager.formatTime(60000)).toBe("01:00.000");
+        expect(raceManager.formatTime(61500)).toBe("01:01.500");
+        expect(raceManager.formatTime(654321)).toBe("10:54.321");
+    });
 });

@@ -99,11 +99,11 @@ export class ArcadeCar {
         this.currentSpeedMs = this._vel.length();
         const currentSpeedKmh = this.getSpeedKmh();
 
-        this.checkGrounded();
-
         // Ensure we have an up to date world matrix
         this.mesh.computeWorldMatrix(true);
         const transform = this.mesh.getWorldMatrix();
+
+        this.checkGrounded();
 
         // Extract direction vectors from the car's rotation matrix
         Vector3.TransformNormalToRef(Vector3.Up(), transform, this._upVec);
@@ -120,7 +120,6 @@ export class ArcadeCar {
     private checkGrounded(): void {
         const pos = this.mesh.getAbsolutePosition();
 
-        this.mesh.computeWorldMatrix(true);
         Vector3.TransformNormalToRef(Vector3.Down(), this.mesh.getWorldMatrix(), this._downVec);
         this._downVec.normalize();
 
