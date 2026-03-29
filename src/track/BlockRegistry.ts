@@ -161,7 +161,8 @@ export class BlockRegistry {
 
         instance.rotation.y = rotationDeg * (Math.PI / 180);
 
-        new PhysicsAggregate(instance, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
+        const shapeType = type === "ramp" ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX;
+        new PhysicsAggregate(instance, shapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
     }
@@ -212,7 +213,8 @@ export class BlockRegistry {
         instance.setParent(null);
         blockNode.dispose();
 
-        new PhysicsAggregate(instance, PhysicsShapeType.BOX, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
+        const wallShapeType = isRamp ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX;
+        new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
     }
