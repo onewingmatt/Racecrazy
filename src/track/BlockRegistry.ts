@@ -287,7 +287,7 @@ export class BlockRegistry {
         blockNode.dispose();
 
         const wallShapeType = (wallType === "ramp" || wallType === "turn_inner" || wallType === "turn_outer") ? PhysicsShapeType.MESH : PhysicsShapeType.BOX;
-        new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
+        new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.0, friction: 0.0 }, this.scene);
 
         return instance;
     }

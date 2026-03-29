@@ -244,7 +244,7 @@ export class App {
         // Very rudimentary AABB check for trigger volumes
         const volPos = volume.getAbsolutePosition();
         const dist = Vector3.Distance(pos, volPos);
-        return dist < 8; // Roughly within 10x10 block size radius
+        return dist < 12; // Adjusted for 14x14 block size radius
     }
 
     private renderUpdate(_alpha: number): void {
