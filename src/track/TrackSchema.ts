@@ -6,7 +6,16 @@ export interface TrackBlock {
     rot: number; // In degrees
 }
 
+export interface MedalTimes {
+    author: number; // The "developer" time
+    gold: number;
+    silver: number;
+    bronze: number;
+}
+
 export interface TrackData {
+    id: string; // Unique identifier for saves
     name: string;
+    medals?: MedalTimes;
     blocks: TrackBlock[];
 }

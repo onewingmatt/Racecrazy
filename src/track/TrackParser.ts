@@ -1,9 +1,11 @@
 import { BlockRegistry } from "./BlockRegistry";
-import { TrackData } from "./TrackSchema";
+import { TrackData, MedalTimes } from "./TrackSchema";
 import { Mesh, Vector3, InstancedMesh } from "@babylonjs/core";
 
 export interface ParsedTrack {
+    id: string;
     name: string;
+    medals?: MedalTimes;
     startPosition: Vector3;
     startRotationDeg: number;
     blocks: InstancedMesh[];
@@ -22,7 +24,9 @@ export class TrackParser {
 
     public parse(data: TrackData): ParsedTrack {
         const parsed: ParsedTrack = {
+            id: data.id,
             name: data.name,
+            medals: data.medals,
             startPosition: new Vector3(0, 10, 0), // Fallback
             startRotationDeg: 0,
             blocks: [],
