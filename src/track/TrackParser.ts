@@ -139,7 +139,7 @@ export class TrackParser {
         }
 
         if (isExposed) {
-            this.registry.createWallInstance(x, y, z, blockRot, localEdge, isRamp);
+            this.registry.createWallInstance(x, y, z, blockRot, localEdge, map.get(`${x},${z}`)?.type || "straight");
         }
     }
 }

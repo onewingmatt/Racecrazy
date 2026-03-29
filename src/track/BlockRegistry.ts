@@ -2,7 +2,7 @@ import { MeshBuilder, StandardMaterial, Color3, Scene, Vector3, Mesh, InstancedM
 import { PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core/Physics/v2";
 
 export class BlockRegistry {
-    public static readonly GRID_SIZE = 10;
+    public static readonly GRID_SIZE = 14;
     public static readonly HEIGHT_STEP = 2;
 
     private readonly materials: { [key: string]: StandardMaterial } = {};
@@ -69,8 +69,21 @@ export class BlockRegistry {
         finish.isVisible = false;
         this.baseMeshes["finish"] = finish;
 
-        const turn = MeshBuilder.CreateBox("base_turn", { width: s, depth: s, height: floorThickness }, this.scene);
-        turn.position.y = floorThickness / 2;
+        // Create a rounded 90-degree curve using Ribbon
+        const path1: Vector3[] = [];
+        const path2: Vector3[] = [];
+        const innerR = 0;
+        const outerR = s;
+        for(let i=0; i<=24; i++) {
+            const angle = Math.PI - (i / 24) * (Math.PI / 2); // PI down to PI/2
+            const px1 = s/2 + innerR * Math.cos(angle);
+            const pz1 = -s/2 + innerR * Math.sin(angle);
+            const px2 = s/2 + outerR * Math.cos(angle);
+            const pz2 = -s/2 + outerR * Math.sin(angle);
+            path1.push(new Vector3(px1, floorThickness, pz1));
+            path2.push(new Vector3(px2, floorThickness, pz2));
+        }
+        const turn = MeshBuilder.CreateRibbon("base_turn", { pathArray: [path1, path2], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
         turn.bakeCurrentTransformIntoVertices();
         turn.material = this.materials["road"];
         turn.isVisible = false;
@@ -142,6 +155,41 @@ export class BlockRegistry {
         slopedWall.name = "wall_ramp";
         slopedWall.isVisible = false;
         this.wallMeshes["ramp"] = slopedWall;
+
+        // Curved Walls for Turns
+        const innerWallPathBottom: Vector3[] = [];
+        const innerWallPathTop: Vector3[] = [];
+        const outerWallPathBottom: Vector3[] = [];
+        const outerWallPathTop: Vector3[] = [];
+        for(let i=0; i<=24; i++) {
+            const angle = Math.PI - (i / 24) * (Math.PI / 2);
+
+            // Inner wall (radius 0)
+            const ir = innerR;
+            const px_in = s/2 + ir * Math.cos(angle);
+            const pz_in = -s/2 + ir * Math.sin(angle);
+            innerWallPathBottom.push(new Vector3(px_in, 0, pz_in));
+            innerWallPathTop.push(new Vector3(px_in, wallHeight, pz_in));
+
+            // Outer wall (radius s)
+            const or = outerR;
+            const px_out = s/2 + or * Math.cos(angle);
+            const pz_out = -s/2 + or * Math.sin(angle);
+            outerWallPathBottom.push(new Vector3(px_out, 0, pz_out));
+            outerWallPathTop.push(new Vector3(px_out, wallHeight, pz_out));
+        }
+
+        const innerWallTurn = MeshBuilder.CreateRibbon("wall_turn_inner", { pathArray: [innerWallPathBottom, innerWallPathTop], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
+        innerWallTurn.material = this.materials["border"];
+        innerWallTurn.bakeCurrentTransformIntoVertices();
+        innerWallTurn.isVisible = false;
+        this.wallMeshes["turn_inner"] = innerWallTurn;
+
+        const outerWallTurn = MeshBuilder.CreateRibbon("wall_turn_outer", { pathArray: [outerWallPathBottom, outerWallPathTop], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
+        outerWallTurn.material = this.materials["border"];
+        outerWallTurn.bakeCurrentTransformIntoVertices();
+        outerWallTurn.isVisible = false;
+        this.wallMeshes["turn_outer"] = outerWallTurn;
     }
 
     public createInstance(type: string, x: number, y: number, z: number, rotationDeg: number): InstancedMesh {
@@ -161,7 +209,7 @@ export class BlockRegistry {
 
         instance.rotation.y = rotationDeg * (Math.PI / 180);
 
-        const shapeType = type === "ramp" ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX;
+        const shapeType = type === "turn" ? PhysicsShapeType.MESH : (type === "ramp" ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX);
         new PhysicsAggregate(instance, shapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
@@ -171,9 +219,24 @@ export class BlockRegistry {
      * Spawns a wall instance on a specific local edge of a block.
      * edge: "left", "right", "forward", "backward"
      */
-    public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, isRamp: boolean): InstancedMesh {
-        const wallType = isRamp && (localEdge === "left" || localEdge === "right") ? "ramp" : "flat";
+    public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, blockType: string): InstancedMesh {
+        let wallType = "flat";
+        if (blockType === "ramp" && (localEdge === "left" || localEdge === "right")) {
+            wallType = "ramp";
+        } else if (blockType === "turn") {
+            // Right turn (entrance South, exit East) means the pivot is at (+s/2, -s/2).
+            // Inner radius is right side (right of entrance direction).
+            // Local edge for entrance is 'backward' (-Z). Right is 'right' (+X).
+            // Left is 'left' (-X). Forward is 'forward' (+Z).
+            // Wait, standard turn with rot=0 goes from South to East.
+            // Inner curve is on the right side.
+            // Outer curve covers Left and Forward.
+            if (localEdge === "right") wallType = "turn_inner";
+            if (localEdge === "left" || localEdge === "forward") wallType = "turn_outer";
+            if (localEdge === "backward") return null as any; // No wall on entrance edge usually, but handled by isExposed logic in TrackParser
+        }
         const baseWall = this.wallMeshes[wallType];
+        if (!baseWall) return null as any;
 
         const instance = baseWall.createInstance(`wall_${x}_${y}_${z}_${localEdge}`);
 
@@ -188,23 +251,33 @@ export class BlockRegistry {
         // Parent the wall to the block, apply local offset/rotation, then bake to world.
         instance.parent = blockNode;
 
-        switch (localEdge) {
-            case "right":
-                instance.position.x = offset;
-                instance.rotation.y = 0;
-                break;
-            case "left":
-                instance.position.x = -offset;
-                instance.rotation.y = 0;
-                break;
-            case "forward":
-                instance.position.z = offset;
-                instance.rotation.y = Math.PI / 2;
-                break;
-            case "backward":
-                instance.position.z = -offset;
-                instance.rotation.y = Math.PI / 2;
-                break;
+        if (blockType === "turn") {
+            // The turn wall meshes are already built perfectly relative to the block center.
+            // But wait, the outer curve covers TWO edges (left and forward). If both are exposed,
+            // spawning "turn_outer" once covers BOTH. If we spawn it twice, we get duplicates.
+            // For now, let's just let it be duplicate exactly on top of each other, or offset correctly.
+            // Let's just snap it to the center.
+            instance.position.set(0, 0, 0);
+            instance.rotation.y = 0;
+        } else {
+            switch (localEdge) {
+                case "right":
+                    instance.position.x = offset;
+                    instance.rotation.y = 0;
+                    break;
+                case "left":
+                    instance.position.x = -offset;
+                    instance.rotation.y = 0;
+                    break;
+                case "forward":
+                    instance.position.z = offset;
+                    instance.rotation.y = Math.PI / 2;
+                    break;
+                case "backward":
+                    instance.position.z = -offset;
+                    instance.rotation.y = Math.PI / 2;
+                    break;
+            }
         }
 
         instance.computeWorldMatrix(true);
@@ -213,7 +286,7 @@ export class BlockRegistry {
         instance.setParent(null);
         blockNode.dispose();
 
-        const wallShapeType = isRamp ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX;
+        const wallShapeType = (wallType === "ramp" || wallType === "turn_inner" || wallType === "turn_outer") ? PhysicsShapeType.MESH : PhysicsShapeType.BOX;
         new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
