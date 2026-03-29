@@ -37,12 +37,12 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 15000,
     maxSpeedKmh: 180,
 
-    baseTurnSpeed: 3.0,
+    baseTurnSpeed: 1.5,
     highSpeedTurnFactor: 0.4,
     turnSpeedRampKmh: 120,
     lowSpeedSteerRampKmh: 60,
 
-    lateralGrip: 0.95,
+    lateralGrip: 0.85,
     downforceFactor: 150,
 
     airPitchForce: 8000,
