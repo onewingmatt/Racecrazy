@@ -49,8 +49,8 @@ describe("TrackParser", () => {
         // Edge detection verification
         // Since block at (0, 0) has a neighbor at (0, 1), the "forward" edge should NOT spawn a wall.
         // It should spawn a backward, left, and right wall.
-        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "backward", false);
-        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "left", false);
-        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "right", false);
+        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "backward", "start");
+        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "left", "start");
+        expect(mockRegistry.createWallInstance).toHaveBeenCalledWith(0, 0, 0, 0, "right", "start");
     });
 });
