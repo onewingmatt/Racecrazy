@@ -15,6 +15,7 @@ export interface ArcadeCarConfig {
     highSpeedTurnFactor: number;
     turnSpeedRampKmh: number;
     lowSpeedSteerRampKmh: number;
+    steeringSmoothing: number;
 
     // Grip & Handling
     lateralGrip: number;
@@ -37,12 +38,13 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 15000,
     maxSpeedKmh: 180,
 
-    baseTurnSpeed: 0.9,
-    highSpeedTurnFactor: 0.5,
-    turnSpeedRampKmh: 150,
+    baseTurnSpeed: 0.75,
+    highSpeedTurnFactor: 0.4,
+    turnSpeedRampKmh: 160,
     lowSpeedSteerRampKmh: 60,
+    steeringSmoothing: 10,
 
-    lateralGrip: 0.92,
+    lateralGrip: 0.96,
     downforceFactor: 150,
 
     airPitchForce: 8000,
@@ -59,6 +61,7 @@ export class ArcadeCar {
 
     private currentSpeedMs = 0;
     private steerAngle = 0;
+    private targetSteerAngle = 0;
     private isGrounded = false;
 
     // Pre-allocated vectors for hot-paths
@@ -92,7 +95,7 @@ export class ArcadeCar {
         }, this.scene);
         this.body = aggregate.body;
 
-        this.body.setAngularDamping(2.0);
+        this.body.setAngularDamping(3.0);
         this.body.setLinearDamping(0.05);
     }
 
@@ -153,11 +156,15 @@ export class ArcadeCar {
 
         const turnSpeed = this.config.baseTurnSpeed * steerMultiplier;
 
-        if (left) this.steerAngle = -turnSpeed;
-        else if (right) this.steerAngle = turnSpeed;
-        else this.steerAngle = 0;
+        if (left) this.targetSteerAngle = -turnSpeed;
+        else if (right) this.targetSteerAngle = turnSpeed;
+        else this.targetSteerAngle = 0;
 
-        if (this.steerAngle !== 0) {
+        // Linearly interpolate current steer angle towards target to filter twitchy micro-inputs
+        const steerDiff = this.targetSteerAngle - this.steerAngle;
+        this.steerAngle += steerDiff * Math.min(1.0, _dt * this.config.steeringSmoothing);
+
+        if (Math.abs(this.steerAngle) > 0.001) {
             const dotForward = Vector3.Dot(vel, forwardVec);
             const reverseFactor = dotForward < -0.1 ? -1 : 1;
 
@@ -244,6 +251,9 @@ export class ArcadeCar {
 
         this.body.setLinearVelocity(Vector3.Zero());
         this.body.setAngularVelocity(Vector3.Zero());
+
+        this.steerAngle = 0;
+        this.targetSteerAngle = 0;
 
         this.body.disablePreStep = false;
     }

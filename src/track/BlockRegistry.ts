@@ -75,7 +75,8 @@ export class BlockRegistry {
         const innerR = 0;
         const outerR = s;
         for(let i=0; i<=24; i++) {
-            const angle = Math.PI - (i / 24) * (Math.PI / 2); // PI down to PI/2
+            // Extend the curve slightly beyond PI and PI/2 to overlap adjacent blocks
+            const angle = (Math.PI + 0.05) - (i / 24) * (Math.PI / 2 + 0.1); // PI down to PI/2
             const px1 = s/2 + innerR * Math.cos(angle);
             const pz1 = -s/2 + innerR * Math.sin(angle);
             const px2 = s/2 + outerR * Math.cos(angle);
@@ -122,17 +123,17 @@ export class BlockRegistry {
         const wallHeight = 1.0;
 
         // Flat Wall
-        const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s, height: wallHeight }, this.scene);
+        const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s + 0.1, height: wallHeight }, this.scene);
         flatWallRail.position.y = wallHeight / 2;
         flatWallRail.material = this.materials["border"];
 
         // Dark corner posts to hide seams
-        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness + 0.1, depth: wallThickness + 0.1, height: wallHeight }, this.scene);
+        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight }, this.scene);
         postZ1.position.y = wallHeight / 2;
         postZ1.position.z = s / 2;
         postZ1.material = this.materials["trim"];
 
-        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness + 0.1, depth: wallThickness + 0.1, height: wallHeight }, this.scene);
+        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight }, this.scene);
         postZ2.position.y = wallHeight / 2;
         postZ2.position.z = -s / 2;
         postZ2.material = this.materials["trim"];
@@ -143,7 +144,7 @@ export class BlockRegistry {
         this.wallMeshes["flat"] = flatWall;
 
         // Sloped Wall for Ramps
-        const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth, height: wallHeight }, this.scene);
+        const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth + 0.1, height: wallHeight }, this.scene);
         slopedWallRail.position.y = wallHeight / 2;
         slopedWallRail.material = this.materials["border"];
 
