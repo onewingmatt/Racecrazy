@@ -38,7 +38,7 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 15000,
     maxSpeedKmh: 180,
 
-    baseTurnSpeed: 0.70,
+    baseTurnSpeed: 3.5,
     highSpeedTurnFactor: 0.4,
     turnSpeedRampKmh: 180,
     lowSpeedSteerRampKmh: 60,
@@ -164,7 +164,7 @@ export class ArcadeCar {
         const steerDiff = this.targetSteerAngle - this.steerAngle;
         this.steerAngle += steerDiff * Math.min(1.0, _dt * this.config.steeringSmoothing);
 
-        // Proportional yaw-rate control for Trackmania "snap-to-straight" feel
+        // Direct yaw-rate control for Trackmania "snap-to-straight" feel
         const dotForward = Vector3.Dot(vel, forwardVec);
         const reverseFactor = dotForward < -0.1 ? -1 : 1;
 
@@ -177,11 +177,12 @@ export class ArcadeCar {
         // Calculate the difference between current and target yaw rate
         const yawError = targetYawVel - currentYawVel;
 
-        // Apply a strong proportional corrective impulse to snap the car's rotation
-        // This eliminates the "boat-like" pendulum effect and stops spinning instantly when key released
-        const correctionFactor = 15.0; // Very strong snap
-        upVec.scaleToRef(yawError * correctionFactor * this.config.mass, this._tempVec1);
-        this.applyTorque(this.body, this._tempVec1);
+        // Directly inject the missing angular velocity to perfectly match the target every frame.
+        // This completely eliminates any "boat-like" pendulum effect and stops spinning instantly when key released.
+        // We use a blend factor (0.5 to 1.0) so it doesn't violently snap the physics engine, but feels instant.
+        upVec.scaleToRef(yawError * 0.8, this._tempVec1);
+        this._angVel.addInPlace(this._tempVec1);
+        this.body.setAngularVelocity(this._angVel);
 
         // --- ACCELERATION / BRAKING ---
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
@@ -210,7 +211,7 @@ export class ArcadeCar {
         const latVel = Vector3.Dot(vel, rightVec);
         if (Math.abs(latVel) > 0.1) {
             // Apply lateral grip impulse slightly behind the center of mass to create a weather-vane stabilizing effect
-            forwardVec.scaleToRef(-1.2, this._tempVec1); // offset distance
+            forwardVec.scaleToRef(-0.4, this._tempVec1); // offset distance
             pos.addToRef(this._tempVec1, this._gripPos);
 
             rightVec.scaleToRef(-latVel * this.config.mass * this.config.lateralGrip, this._gripImpulse);
