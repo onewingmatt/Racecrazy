@@ -116,34 +116,52 @@ export class TrackParser {
         const neighbor = map.get(`${nx},${nz}`);
 
         let isExposed = true;
+        const myType = map.get(`${x},${z}`)?.type || "straight";
 
-        if (neighbor) {
-            // Check if they connect smoothly on the Y axis
+        // If this is a turn block, it is ONLY open on its "backward" (-Z) and "right" (+X) local edges.
+        // If we are checking "forward" or "left", they are inherently closed walls by the turn geometry itself,
+        // regardless of whether there is a neighbor or not.
+        if (myType === "turn" && (localEdge === "forward" || localEdge === "left")) {
+            isExposed = true; // Always spawn the curve walls on these sides
+        } else if (neighbor) {
+            // Standard check if they connect smoothly on the Y axis
             let myEdgeY = y;
             if (isRamp && localEdge === "forward") myEdgeY = y + 1; // Our ramps go up 1 height step (2m)
 
             let neighborEdgeY = neighbor.y;
             const neighborIsRamp = neighbor.type === "ramp";
 
-            if (neighborIsRamp) {
-                // If neighbor is a ramp, figure out if the edge touching me is its high edge or low edge
-                const nNormRot = ((neighbor.rot % 360) + 360) % 360;
-                const nIdx = Math.round(nNormRot / 90) % 4;
-                const nDirs = this.getDirectionMap(nIdx);
+            // If neighbor is a turn, we only connect smoothly if we hit their "backward" or "right" edge.
+            // But for simplicity, we assume if they are at the same Y, they connect, UNLESS we hit their closed side.
+            // Let's calculate the local edge of the neighbor that is touching us.
+            const nNormRot = ((neighbor.rot % 360) + 360) % 360;
+            const nIdx = Math.round(nNormRot / 90) % 4;
+            const nDirs = this.getDirectionMap(nIdx);
 
-                // If neighbor's forward points opposite to my check direction, it means its high end is touching me
-                if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) {
+            let nLocalEdgeTouchingMe = "";
+            if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "forward";
+            else if (nDirs["backward"].dx === -worldDir.dx && nDirs["backward"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "backward";
+            else if (nDirs["left"].dx === -worldDir.dx && nDirs["left"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "left";
+            else if (nDirs["right"].dx === -worldDir.dx && nDirs["right"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "right";
+
+            let hitClosedNeighborTurn = false;
+            if (neighbor.type === "turn" && (nLocalEdgeTouchingMe === "forward" || nLocalEdgeTouchingMe === "left")) {
+                hitClosedNeighborTurn = true;
+            } else if (neighborIsRamp) {
+                // If neighbor is a ramp, figure out if the edge touching me is its high edge or low edge
+                if (nLocalEdgeTouchingMe === "forward") {
                     neighborEdgeY = neighbor.y + 1;
                 }
             }
 
-            if (myEdgeY === neighborEdgeY) {
-                isExposed = false; // We have a flush neighbor!
+            // If heights align and we aren't colliding into the closed side of a neighbor's turn wall
+            if (myEdgeY === neighborEdgeY && !hitClosedNeighborTurn) {
+                isExposed = false;
             }
         }
 
         if (isExposed) {
-            this.registry.createWallInstance(x, y, z, blockRot, localEdge, map.get(`${x},${z}`)?.type || "straight");
+            this.registry.createWallInstance(x, y, z, blockRot, localEdge, myType);
         }
     }
 }
