@@ -38,13 +38,13 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 15000,
     maxSpeedKmh: 180,
 
-    baseTurnSpeed: 0.75,
+    baseTurnSpeed: 0.70,
     highSpeedTurnFactor: 0.4,
-    turnSpeedRampKmh: 160,
+    turnSpeedRampKmh: 180,
     lowSpeedSteerRampKmh: 60,
-    steeringSmoothing: 10,
+    steeringSmoothing: 20,
 
-    lateralGrip: 0.96,
+    lateralGrip: 0.99,
     downforceFactor: 150,
 
     airPitchForce: 8000,
@@ -71,11 +71,11 @@ export class ArcadeCar {
     private _downVec = Vector3.Zero();
     private _vel = Vector3.Zero();
     private _angVel = Vector3.Zero();
-    private _yawChange = Vector3.Zero();
-    private _brakeForce = Vector3.Zero();
+        private _brakeForce = Vector3.Zero();
     private _gripImpulse = Vector3.Zero();
     private _alignTorqueDir = Vector3.Zero();
     private _tempVec1 = Vector3.Zero();
+    private _gripPos = Vector3.Zero();
     private _worldUp = Vector3.Up();
     private _groundRay = new Ray(Vector3.Zero(), Vector3.Zero(), 0);
 
@@ -164,17 +164,24 @@ export class ArcadeCar {
         const steerDiff = this.targetSteerAngle - this.steerAngle;
         this.steerAngle += steerDiff * Math.min(1.0, _dt * this.config.steeringSmoothing);
 
-        if (Math.abs(this.steerAngle) > 0.001) {
-            const dotForward = Vector3.Dot(vel, forwardVec);
-            const reverseFactor = dotForward < -0.1 ? -1 : 1;
+        // Proportional yaw-rate control for Trackmania "snap-to-straight" feel
+        const dotForward = Vector3.Dot(vel, forwardVec);
+        const reverseFactor = dotForward < -0.1 ? -1 : 1;
 
-            this.body.getAngularVelocityToRef(this._angVel);
-            upVec.scaleToRef(this.steerAngle * reverseFactor, this._yawChange);
+        // Desired yaw angular velocity based on steering input
+        const targetYawVel = this.steerAngle * reverseFactor;
 
-            this._yawChange.scaleToRef(0.5, this._tempVec1);
-            this._angVel.addInPlace(this._tempVec1);
-            this.body.setAngularVelocity(this._angVel);
-        }
+        this.body.getAngularVelocityToRef(this._angVel);
+        const currentYawVel = Vector3.Dot(this._angVel, upVec);
+
+        // Calculate the difference between current and target yaw rate
+        const yawError = targetYawVel - currentYawVel;
+
+        // Apply a strong proportional corrective impulse to snap the car's rotation
+        // This eliminates the "boat-like" pendulum effect and stops spinning instantly when key released
+        const correctionFactor = 15.0; // Very strong snap
+        upVec.scaleToRef(yawError * correctionFactor * this.config.mass, this._tempVec1);
+        this.applyTorque(this.body, this._tempVec1);
 
         // --- ACCELERATION / BRAKING ---
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
@@ -202,8 +209,12 @@ export class ArcadeCar {
         // --- GRIP (Cancel lateral velocity) ---
         const latVel = Vector3.Dot(vel, rightVec);
         if (Math.abs(latVel) > 0.1) {
+            // Apply lateral grip impulse slightly behind the center of mass to create a weather-vane stabilizing effect
+            forwardVec.scaleToRef(-1.2, this._tempVec1); // offset distance
+            pos.addToRef(this._tempVec1, this._gripPos);
+
             rightVec.scaleToRef(-latVel * this.config.mass * this.config.lateralGrip, this._gripImpulse);
-            this.body.applyImpulse(this._gripImpulse, pos);
+            this.body.applyImpulse(this._gripImpulse, this._gripPos);
         }
 
         // --- DOWNFORCE ---
