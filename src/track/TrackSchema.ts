@@ -6,6 +6,15 @@ export interface TrackBlock {
     rot: number; // In degrees
 }
 
+export interface BlockMetadata {
+    category: "flat" | "curve" | "banked" | "ramp" | "stunt";
+    elevationChange: number; // in HEIGHT_STEP units
+    bankAngle: number; // in degrees
+    wallBehavior: "flat" | "curved" | "sloped" | "none";
+    collisionHint: "box" | "convex_hull" | "mesh";
+    supportsInvert?: boolean; // Groundwork for loops
+}
+
 export interface MedalTimes {
     author: number; // The "developer" time
     gold: number;

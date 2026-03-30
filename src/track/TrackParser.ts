@@ -71,16 +71,14 @@ export class TrackParser {
             const normRot = ((rot % 360) + 360) % 360;
             const rIdx = Math.round(normRot / 90) % 4;
 
-            const isRamp = type === "ramp";
-
             // Map local directions to world grid offsets
             const dirMap = this.getDirectionMap(rIdx);
 
             // Evaluate edges
-            this.evaluateEdge(x, y, z, rot, "forward", dirMap["forward"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "backward", dirMap["backward"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "left", dirMap["left"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "right", dirMap["right"], isRamp, map);
+            this.evaluateEdge(x, y, z, rot, "forward", dirMap["forward"], type, map);
+            this.evaluateEdge(x, y, z, rot, "backward", dirMap["backward"], type, map);
+            this.evaluateEdge(x, y, z, rot, "left", dirMap["left"], type, map);
+            this.evaluateEdge(x, y, z, rot, "right", dirMap["right"], type, map);
         }
 
         return parsed;
@@ -110,7 +108,7 @@ export class TrackParser {
      * Checks if a neighbor block exists and seamlessly connects to the specified local edge.
      * If it does not, a wall instance is generated.
      */
-    private evaluateEdge(x: number, y: number, z: number, blockRot: number, localEdge: string, worldDir: { dx: number, dz: number }, isRamp: boolean, map: Map<string, GridCell>): void {
+    private evaluateEdge(x: number, y: number, z: number, blockRot: number, localEdge: string, worldDir: { dx: number, dz: number }, myType: string, map: Map<string, GridCell>): void {
         const nx = x + worldDir.dx;
         const nz = z + worldDir.dz;
         const neighbor = map.get(`${nx},${nz}`);
@@ -118,27 +116,28 @@ export class TrackParser {
         let isExposed = true;
 
         if (neighbor) {
-            // Check if they connect smoothly on the Y axis
+            const myMeta = BlockRegistry.blockMetadata[myType] || BlockRegistry.blockMetadata["straight"];
             let myEdgeY = y;
-            if (isRamp && localEdge === "forward") myEdgeY = y + 1; // Our ramps go up 1 height step (2m)
+            if (myMeta.category === "ramp" && localEdge === "forward") {
+                myEdgeY = y + myMeta.elevationChange;
+            }
 
+            const neighborMeta = BlockRegistry.blockMetadata[neighbor.type] || BlockRegistry.blockMetadata["straight"];
             let neighborEdgeY = neighbor.y;
-            const neighborIsRamp = neighbor.type === "ramp";
 
-            if (neighborIsRamp) {
-                // If neighbor is a ramp, figure out if the edge touching me is its high edge or low edge
+            if (neighborMeta.category === "ramp") {
                 const nNormRot = ((neighbor.rot % 360) + 360) % 360;
                 const nIdx = Math.round(nNormRot / 90) % 4;
                 const nDirs = this.getDirectionMap(nIdx);
 
-                // If neighbor's forward points opposite to my check direction, it means its high end is touching me
                 if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) {
-                    neighborEdgeY = neighbor.y + 1;
+                    neighborEdgeY = neighbor.y + neighborMeta.elevationChange;
                 }
             }
 
-            if (myEdgeY === neighborEdgeY) {
-                isExposed = false; // We have a flush neighbor!
+            // Using a tiny epsilon because elevation changes might be fractional (e.g. 0.5)
+            if (Math.abs(myEdgeY - neighborEdgeY) < 0.01) {
+                isExposed = false;
             }
         }
 
