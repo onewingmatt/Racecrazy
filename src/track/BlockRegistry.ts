@@ -92,16 +92,21 @@ export class BlockRegistry {
 
         // Ramp (Slope)
         // Perfectly hinge at (0,0,-s/2) and slope up to (0,h,s/2).
-        const rampDepth = Math.sqrt(s*s + h*h);
-        const simpleRamp = MeshBuilder.CreateBox("base_ramp", { width: s, depth: rampDepth, height: floorThickness }, this.scene);
         const angle = Math.atan2(h, s);
-        simpleRamp.rotation.x = -angle;
-        simpleRamp.position.y = h / 2; // Center Y
-        // Offset center Z forward slightly because the hypotenuse is longer than the base 's'
-        // Actually, the pivot point is bottom backward edge.
-        // Let's use a simple approach: position so its bounding box fits perfectly in s x h x s
-        simpleRamp.position.y += floorThickness/2;
-        // We will keep it simple and just tilt it from the center. It will overlap the floor slightly, but thin floor hides it.
+        const rampPath1: Vector3[] = [
+            new Vector3(-s/2, 0, -s/2),
+            new Vector3(-s/2, h, s/2)
+        ];
+        const rampPath2: Vector3[] = [
+            new Vector3(s/2, 0, -s/2),
+            new Vector3(s/2, h, s/2)
+        ];
+
+        // Ribbon creates perfectly precise corners eliminating lip/snagging
+        const simpleRamp = MeshBuilder.CreateRibbon("base_ramp", { pathArray: [rampPath1, rampPath2], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
+        // Add floor thickness offset to match straight block top surface (which is shifted by floorThickness/2, wait, CreateBox puts center at Y=floorThickness/2, so top is floorThickness)
+        // For Ribbon, it builds EXACTLY where paths are. So we lift it by floorThickness.
+        simpleRamp.position.y = floorThickness;
         simpleRamp.bakeCurrentTransformIntoVertices();
         simpleRamp.material = this.materials["road"];
         simpleRamp.isVisible = false;
@@ -144,13 +149,14 @@ export class BlockRegistry {
         this.wallMeshes["flat"] = flatWall;
 
         // Sloped Wall for Ramps
+        const rampDepth = Math.sqrt(s*s + h*h);
         const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth + 0.1, height: wallHeight }, this.scene);
         slopedWallRail.position.y = wallHeight / 2;
         slopedWallRail.material = this.materials["border"];
 
         const slopedWall = Mesh.MergeMeshes([slopedWallRail], true, true, undefined, false, true)!;
         slopedWall.rotation.x = -angle;
-        slopedWall.position.y = h / 2;
+        slopedWall.position.y = h / 2 + floorThickness; // Adjust for the new Ribbon ramp height
         slopedWall.bakeCurrentTransformIntoVertices();
 
         slopedWall.name = "wall_ramp";
