@@ -231,16 +231,17 @@ export class BlockRegistry {
         if (blockType === "ramp" && (localEdge === "left" || localEdge === "right")) {
             wallType = "ramp";
         } else if (blockType === "turn") {
-            // Right turn (entrance South, exit East) means the pivot is at (+s/2, -s/2).
-            // Inner radius is right side (right of entrance direction).
-            // Local edge for entrance is 'backward' (-Z). Right is 'right' (+X).
-            // Left is 'left' (-X). Forward is 'forward' (+Z).
-            // Wait, standard turn with rot=0 goes from South to East.
-            // Inner curve is on the right side.
-            // Outer curve covers Left and Forward.
+            // Right turn (entrance South, exit East)
+            // Inner curve is on the right side (+X edge), Outer curve covers Left (-X) and Forward (+Z).
+            // "backward" (-Z) is the open entrance.
             if (localEdge === "right") wallType = "turn_inner";
             if (localEdge === "left" || localEdge === "forward") wallType = "turn_outer";
-            if (localEdge === "backward") return null as any; // No wall on entrance edge usually, but handled by isExposed logic in TrackParser
+
+            // Outer curve actually covers both 'left' and 'forward' edges inherently.
+            // To prevent creating exact duplicate walls when both edges are requested by TrackParser,
+            // we will only spawn "turn_outer" once (e.g., when 'left' is called).
+            if (localEdge === "forward") return null as any;
+            if (localEdge === "backward") return null as any; // No wall on entrance edge, it's open
         }
         const baseWall = this.wallMeshes[wallType];
         if (!baseWall) return null as any;
