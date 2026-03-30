@@ -1,0 +1,27 @@
+{
+  "id": "track_5_jump",
+  "name": "Leap of Faith",
+  "medals": {
+    "author": 16000,
+    "gold": 19000,
+    "silver": 23000,
+    "bronze": 30000
+  },
+  "blocks": [
+    { "type": "start", "x": 0, "y": 0, "z": 0, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 0, "z": 1, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 0, "z": 2, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 0, "z": 3, "rot": 0 },
+    { "type": "ramp", "x": 0, "y": 0, "z": 4, "rot": 0 },
+    { "type": "checkpoint", "x": 0, "y": 1, "z": 5, "rot": 0 },
+    { "type": "straight", "x": 0, "y": 1, "z": 6, "rot": 0 },
+    { "type": "turn", "x": 0, "y": 1, "z": 7, "rot": 0 },
+    { "type": "straight", "x": 1, "y": 1, "z": 7, "rot": 90 },
+    { "type": "ramp", "x": 2, "y": 0, "z": 7, "rot": 270 },
+    { "type": "checkpoint", "x": 3, "y": 0, "z": 7, "rot": 90 },
+    { "type": "turn", "x": 4, "y": 0, "z": 7, "rot": 90 },
+    { "type": "straight", "x": 4, "y": 0, "z": 6, "rot": 180 },
+    { "type": "turn", "x": 4, "y": 0, "z": 5, "rot": 180 },
+    { "type": "finish", "x": 3, "y": 0, "z": 5, "rot": 270 }
+  ]
+}
