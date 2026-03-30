@@ -22,6 +22,7 @@ export class BlockRegistry {
 
         const trimMat = new StandardMaterial("trimMat", this.scene);
         trimMat.diffuseColor = new Color3(0.1, 0.1, 0.1);
+        trimMat.zOffset = -1; // Pull trim forward slightly in depth buffer to prevent z-fighting with overlapping rails at corners
 
         const startMat = new StandardMaterial("startMat", this.scene);
         startMat.diffuseColor = new Color3(0.3, 0.9, 0.3);
@@ -129,18 +130,18 @@ export class BlockRegistry {
         const wallHeight = 1.0;
 
         // Flat Wall
-        const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s + 0.1, height: wallHeight }, this.scene);
+        const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s + 0.12, height: wallHeight }, this.scene);
         flatWallRail.position.y = wallHeight / 2;
         flatWallRail.material = this.materials["border"];
 
         // Dark corner posts to hide seams
-        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight }, this.scene);
-        postZ1.position.y = wallHeight / 2;
+        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight + 0.05 }, this.scene);
+        postZ1.position.y = (wallHeight + 0.05) / 2;
         postZ1.position.z = s / 2;
         postZ1.material = this.materials["trim"];
 
-        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight }, this.scene);
-        postZ2.position.y = wallHeight / 2;
+        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight + 0.05 }, this.scene);
+        postZ2.position.y = (wallHeight + 0.05) / 2;
         postZ2.position.z = -s / 2;
         postZ2.material = this.materials["trim"];
 
@@ -151,7 +152,7 @@ export class BlockRegistry {
 
         // Sloped Wall for Ramps
         const rampDepth = Math.sqrt(s*s + h*h);
-        const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth + 0.1, height: wallHeight }, this.scene);
+        const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth + 0.08, height: wallHeight }, this.scene);
         slopedWallRail.position.y = wallHeight / 2;
         slopedWallRail.material = this.materials["border"];
 
