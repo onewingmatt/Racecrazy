@@ -93,20 +93,21 @@ export class BlockRegistry {
         // Ramp (Slope)
         // Perfectly hinge at (0,0,-s/2) and slope up to (0,h,s/2).
         const angle = Math.atan2(h, s);
-        const rampPath1: Vector3[] = [
-            new Vector3(-s/2, 0, -s/2),
-            new Vector3(-s/2, h, s/2)
-        ];
-        const rampPath2: Vector3[] = [
-            new Vector3(s/2, 0, -s/2),
-            new Vector3(s/2, h, s/2)
-        ];
+        // We build a solid enclosed volume using Ribbon with 4 paths wrapping around the slope.
+        // This ensures the ramp has physical depth (`floorThickness`) which is required for reliable
+        // `InstancedMesh` and `PhysicsShapeType.MESH` generation without silent invisible failures.
+        const rampBottomFront = [new Vector3(-s/2, 0, -s/2), new Vector3(s/2, 0, -s/2)];
+        const rampTopFront = [new Vector3(-s/2, floorThickness, -s/2), new Vector3(s/2, floorThickness, -s/2)];
+        const rampTopBack = [new Vector3(-s/2, h + floorThickness, s/2), new Vector3(s/2, h + floorThickness, s/2)];
+        const rampBottomBack = [new Vector3(-s/2, h, s/2), new Vector3(s/2, h, s/2)];
 
-        // Ribbon creates perfectly precise corners eliminating lip/snagging
-        const simpleRamp = MeshBuilder.CreateRibbon("base_ramp", { pathArray: [rampPath1, rampPath2], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
-        // Add floor thickness offset to match straight block top surface (which is shifted by floorThickness/2, wait, CreateBox puts center at Y=floorThickness/2, so top is floorThickness)
-        // For Ribbon, it builds EXACTLY where paths are. So we lift it by floorThickness.
-        simpleRamp.position.y = floorThickness;
+        // `closePath: true` wraps the final path back to the first path, closing the bottom floor
+        const simpleRamp = MeshBuilder.CreateRibbon("base_ramp", {
+            pathArray: [rampBottomFront, rampTopFront, rampTopBack, rampBottomBack],
+            closePath: true,
+            sideOrientation: Mesh.DOUBLESIDE
+        }, this.scene);
+
         simpleRamp.bakeCurrentTransformIntoVertices();
         simpleRamp.material = this.materials["road"];
         simpleRamp.isVisible = false;
