@@ -216,7 +216,7 @@ export class BlockRegistry {
 
         instance.rotation.y = rotationDeg * (Math.PI / 180);
 
-        const shapeType = type === "turn" ? PhysicsShapeType.MESH : (type === "ramp" ? PhysicsShapeType.CONVEX_HULL : PhysicsShapeType.BOX);
+        const shapeType = (type === "turn" || type === "ramp") ? PhysicsShapeType.MESH : PhysicsShapeType.BOX;
         new PhysicsAggregate(instance, shapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
