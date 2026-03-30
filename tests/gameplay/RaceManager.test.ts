@@ -40,6 +40,8 @@ describe("RaceManager", () => {
         expect(raceManager.currentCheckpointId).toBe(-1);
 
         // Hit CP 0 successfully
+        let now = 1000;
+        vi.spyOn(performance, 'now').mockReturnValue(now);
         expect(raceManager.hitCheckpoint(0)).toBe(true);
         expect(raceManager.currentCheckpointId).toBe(0);
 
@@ -47,8 +49,8 @@ describe("RaceManager", () => {
         expect(raceManager.hitCheckpoint(0)).toBe(false);
 
         // Advance mock time to bypass 500ms debounce
-        const now = performance.now();
-        vi.spyOn(performance, 'now').mockReturnValue(now + 600);
+        now += 600;
+        vi.spyOn(performance, 'now').mockReturnValue(now);
 
         // Hit CP 1 successfully
         expect(raceManager.hitCheckpoint(1)).toBe(true);
