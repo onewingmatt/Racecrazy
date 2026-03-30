@@ -24,7 +24,7 @@ describe("RaceManager", () => {
     });
 
     it("should start in READY state and transition to RACING", () => {
-        raceManager.startRace(3);
+        raceManager.startRace("track1", 3);
         expect(raceManager.state).toBe(RaceState.READY);
 
         raceManager.beginRacing();
@@ -32,7 +32,7 @@ describe("RaceManager", () => {
     });
 
     it("should enforce sequential checkpoint progression", () => {
-        raceManager.startRace(3);
+        raceManager.startRace("track1", 3);
         raceManager.beginRacing();
 
         // Cannot hit CP 1 before CP 0
@@ -56,7 +56,7 @@ describe("RaceManager", () => {
     });
 
     it("should prevent hitting finish if not all checkpoints are collected", () => {
-        raceManager.startRace(3); // 3 checkpoints (0, 1, 2)
+        raceManager.startRace("track1", 3); // 3 checkpoints (0, 1, 2)
         raceManager.beginRacing();
 
         // Hit CP 0
@@ -68,7 +68,7 @@ describe("RaceManager", () => {
     });
 
     it("should finish successfully and save best time if all checkpoints are hit", () => {
-        raceManager.startRace(2); // Requires hitting CP 0 and CP 1 before finish
+        raceManager.startRace("track1", 2); // Requires hitting CP 0 and CP 1 before finish
         raceManager.beginRacing();
 
         let now = 1000;
@@ -88,14 +88,14 @@ describe("RaceManager", () => {
         expect(raceManager.state).toBe(RaceState.FINISHED);
 
         // Check local storage saving
-        expect(localStorage.setItem).toHaveBeenCalledWith("trackmania_clone_best_time", expect.any(String));
+        expect(localStorage.setItem).toHaveBeenCalledWith("trackmania_clone_best_time_track1", expect.any(String));
         expect(raceManager.bestTime).toBeGreaterThan(0);
     });
 
 
     it("should ignore invalid best time in localStorage", () => {
         const store: any = {
-            "trackmania_clone_best_time": "invalid_time"
+            "trackmania_clone_best_time_track1": "invalid_time"
         };
         global.localStorage = {
             getItem: vi.fn((key) => store[key] || null),
@@ -110,12 +110,12 @@ describe("RaceManager", () => {
         expect(newRaceManager.bestTime).toBeNull();
     });
     it("should reset completely when startRace is called again", () => {
-        raceManager.startRace(2);
+        raceManager.startRace("track1", 2);
         raceManager.beginRacing();
         raceManager.hitCheckpoint(0);
 
         // Restart
-        raceManager.startRace(2);
+        raceManager.startRace("track1", 2);
         expect(raceManager.state).toBe(RaceState.READY);
         expect(raceManager.currentCheckpointId).toBe(-1);
     });
