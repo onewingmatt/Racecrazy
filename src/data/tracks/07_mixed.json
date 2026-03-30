@@ -20,7 +20,7 @@
     { "type": "turn", "x": 6, "y": 0, "z": 3, "rot": 90 },
     { "type": "straight", "x": 6, "y": 0, "z": 2, "rot": 180 },
     { "type": "checkpoint", "x": 6, "y": 0, "z": 1, "rot": 180 },
-    { "type": "ramp", "x": 6, "y": 0, "z": 0, "rot": 0 },
+    { "type": "ramp", "x": 6, "y": 0, "z": 0, "rot": 180 },
     { "type": "turn", "x": 6, "y": 1, "z": -1, "rot": 180 },
     { "type": "straight", "x": 5, "y": 1, "z": -1, "rot": 270 },
     { "type": "straight", "x": 4, "y": 1, "z": -1, "rot": 270 },
