@@ -1,7 +1,17 @@
+import { MedalTimes } from "../track/TrackSchema";
+
 export enum RaceState {
     READY,
     RACING,
     FINISHED
+}
+
+export enum MedalType {
+    NONE,
+    BRONZE,
+    SILVER,
+    GOLD,
+    AUTHOR
 }
 
 export interface CheckpointInfo {
@@ -15,29 +25,36 @@ export class RaceManager {
     public startTime: number = 0;
     public raceTime: number = 0;
     public bestTime: number | null = null;
+    public currentTrackId: string | null = null;
+    public currentMedals: MedalTimes | null = null;
 
     // Checkpoints are 0-indexed. -1 means no checkpoints hit yet.
     public currentCheckpointId: number = -1;
     public maxCheckpoints: number = 0;
 
     // Debounce to prevent physics jitter from double-triggering a checkpoint
-    // We'll store the last time a checkpoint was hit in ms.
     private lastTriggerTime: number = 0;
     private readonly TRIGGER_COOLDOWN_MS = 500;
 
     constructor() {
-        this.loadBestTime();
     }
 
     /**
-     * Resets the race to the starting line state.
+     * Resets the race to the starting line state for a specific track.
      */
-    public startRace(maxCp: number): void {
+    public startRace(trackId: string, maxCp: number, medals?: MedalTimes): void {
         this.state = RaceState.READY;
         this.raceTime = 0;
         this.currentCheckpointId = -1;
         this.maxCheckpoints = maxCp;
         this.lastTriggerTime = 0;
+
+        if (this.currentTrackId !== trackId) {
+            this.currentTrackId = trackId;
+            this.loadBestTime(trackId);
+        }
+
+        this.currentMedals = medals || null;
     }
 
     /**
@@ -85,27 +102,30 @@ export class RaceManager {
             this.state = RaceState.FINISHED;
             // Update time exactly at finish
             this.raceTime = performance.now() - this.startTime;
-            this.checkBestTime(this.raceTime);
+            if (this.currentTrackId) {
+                this.checkBestTime(this.currentTrackId, this.raceTime);
+            }
             return true;
         }
 
         return false;
     }
 
-    private checkBestTime(time: number): void {
+    private checkBestTime(trackId: string, time: number): void {
         if (this.bestTime === null || time < this.bestTime) {
             this.bestTime = time;
             try {
-                localStorage.setItem("trackmania_clone_best_time", time.toString());
+                localStorage.setItem(`trackmania_clone_best_time_${trackId}`, time.toString());
             } catch (e) {
                 console.warn("Could not save best time to localStorage", e);
             }
         }
     }
 
-    private loadBestTime(): void {
+    public loadBestTime(trackId: string): void {
+        this.bestTime = null; // Reset first
         try {
-            const stored = localStorage.getItem("trackmania_clone_best_time");
+            const stored = localStorage.getItem(`trackmania_clone_best_time_${trackId}`);
             if (stored) {
                 const parsedTime = parseFloat(stored);
                 if (!isNaN(parsedTime) && isFinite(parsedTime)) {
@@ -114,6 +134,37 @@ export class RaceManager {
             }
         } catch (e) {
             console.warn("Could not load best time from localStorage", e);
+        }
+    }
+
+    public getEarnedMedal(time: number): MedalType {
+        if (!this.currentMedals) return MedalType.NONE;
+
+        if (time <= this.currentMedals.author) return MedalType.AUTHOR;
+        if (time <= this.currentMedals.gold) return MedalType.GOLD;
+        if (time <= this.currentMedals.silver) return MedalType.SILVER;
+        if (time <= this.currentMedals.bronze) return MedalType.BRONZE;
+
+        return MedalType.NONE;
+    }
+
+    public static getMedalColor(medal: MedalType): string {
+        switch (medal) {
+            case MedalType.AUTHOR: return "#00FF00"; // Bright Green
+            case MedalType.GOLD: return "#FFD700"; // Gold
+            case MedalType.SILVER: return "#C0C0C0"; // Silver
+            case MedalType.BRONZE: return "#CD7F32"; // Bronze
+            default: return "#AAAAAA"; // None/Gray
+        }
+    }
+
+    public static getMedalName(medal: MedalType): string {
+        switch (medal) {
+            case MedalType.AUTHOR: return "AUTHOR";
+            case MedalType.GOLD: return "GOLD";
+            case MedalType.SILVER: return "SILVER";
+            case MedalType.BRONZE: return "BRONZE";
+            default: return "NONE";
         }
     }
 
