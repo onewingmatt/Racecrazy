@@ -97,7 +97,7 @@ describe("RaceManager", () => {
 
     it("should ignore invalid best time in localStorage", () => {
         const store: any = {
-            "trackmania_clone_best_time": "invalid_time"
+            "trackmania_clone_best_time_track1": "invalid_time"
         };
         global.localStorage = {
             getItem: vi.fn((key) => store[key] || null),
