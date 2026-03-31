@@ -1,4 +1,4 @@
-import { Vector3, Quaternion } from "@babylonjs/core";
+import { Vector3, Quaternion, InstancedMesh, Mesh } from "@babylonjs/core";
 import { Renderer } from "../rendering/Renderer";
 import { PhysicsEngine } from "../physics/PhysicsEngine";
 import { BlockRegistry } from "../track/BlockRegistry";
@@ -115,7 +115,7 @@ export class App {
 
         // Safely dispose of all track and wall instances
         const meshesToDispose = this.renderer.scene.meshes.filter(m =>
-            (m as any).isAnInstance && (m.name.startsWith("inst_") || m.name.startsWith("wall_"))
+            (m instanceof InstancedMesh) && (m.name.startsWith("inst_") || m.name.startsWith("wall_"))
         );
 
         meshesToDispose.forEach(m => {
@@ -274,11 +274,11 @@ export class App {
         }
     }
 
-    private isInVolume(pos: Vector3, volume: any): boolean {
+    private isInVolume(pos: Vector3, volume: Mesh): boolean {
         // Very rudimentary AABB check for trigger volumes
         const volPos = volume.getAbsolutePosition();
-        const dist = Vector3.Distance(pos, volPos);
-        return dist < 12; // Adjusted for 14x14 block size radius
+        const distSq = Vector3.DistanceSquared(pos, volPos);
+        return distSq < 144; // 12^2, adjusted for 14x14 block size radius
     }
 
     private renderUpdate(_alpha: number): void {
