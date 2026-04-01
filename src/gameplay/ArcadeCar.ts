@@ -34,24 +34,26 @@ export interface ArcadeCarConfig {
 const DEFAULT_CONFIG: ArcadeCarConfig = {
     mass: 1000,
 
-    accelerationForce: 45000,
-    brakingForce: 60000,
+    accelerationForce: 48000,
+    brakingForce: 55000,
     reverseForce: 20000,
-    maxSpeedKmh: 300,
+    maxSpeedKmh: 280,
 
-    baseTurnSpeed: 3,
-    highSpeedTurnFactor: 0.45,
-    turnSpeedRampKmh: 250,
-    lowSpeedSteerRampKmh: 60,
-    steeringSmoothing: 18,
+    baseTurnSpeed: 3.5,
+    highSpeedTurnFactor: 0.4,
+    turnSpeedRampKmh: 200,
+    lowSpeedSteerRampKmh: 50,
+    steeringSmoothing: 20,
 
-    lateralGrip: 0.85,
-    downforceFactor: 100,
+    // Grip — TM has strong lateral bite but not rail-sharp
+    lateralGrip: 0.96,
+    downforceFactor: 220,
 
-    airPitchForce: 15000,
-    airRollForce: 12000,
-    airYawForce: 10000,
-    autoLevelForce: 2000,
+    // Air control: only pitch and roll for corrective input, no yaw spin
+    airPitchForce: 3000,
+    airRollForce: 2000,
+    airYawForce: 0,
+    autoLevelForce: 8000,
 
     groundCheckDistance: 0.6
 };
@@ -73,7 +75,7 @@ export class ArcadeCar {
     private _downVec = Vector3.Zero();
     private _vel = Vector3.Zero();
     private _angVel = Vector3.Zero();
-        private _brakeForce = Vector3.Zero();
+    private _brakeForce = Vector3.Zero();
     private _gripImpulse = Vector3.Zero();
     private _alignTorqueDir = Vector3.Zero();
     private _tempVec1 = Vector3.Zero();
@@ -92,13 +94,13 @@ export class ArcadeCar {
 
         const aggregate = new PhysicsAggregate(this.mesh, PhysicsShapeType.BOX, {
             mass: this.config.mass,
-            friction: 0.0, // Smooth out ramp transitions by removing surface friction
-            restitution: 0.0 // Prevent bouncing on sharp edges
+            friction: 0.7,
+            restitution: 0.1
         }, this.scene);
         this.body = aggregate.body;
 
-        this.body.setAngularDamping(0.5);
-        this.body.setLinearDamping(0.01);
+        this.body.setAngularDamping(8.0);
+        this.body.setLinearDamping(0.005);
     }
 
     public update(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean): void {
@@ -240,6 +242,7 @@ export class ArcadeCar {
         }
 
         // --- AIR ROLL ---
+        // TM Nations uses left/right for gentle roll correction in air — no yaw torque
         if (left) {
              forwardVec.scaleToRef(this.config.airRollForce, this._tempVec1);
              this.applyTorque(this.body, this._tempVec1);
@@ -248,23 +251,11 @@ export class ArcadeCar {
              this.applyTorque(this.body, this._tempVec1);
         }
 
-        // --- AIR YAW ---
-        // TM-style: allows steering while airborne to land facing the right direction
-        if (left) {
-            upVec.scaleToRef(-this.config.airYawForce, this._tempVec1);
-            this.applyTorque(this.body, this._tempVec1);
-        } else if (right) {
-            upVec.scaleToRef(this.config.airYawForce, this._tempVec1);
-            this.applyTorque(this.body, this._tempVec1);
-        }
-
         // --- AUTO LEVELING ---
-        // Gentle auto-level — TM lets you hold orientations rather than fighting back hard
+        // Stronger auto-level so the car returns to stable flight quickly
         Vector3.CrossToRef(upVec, this._worldUp, this._alignTorqueDir);
-        if (this._alignTorqueDir.lengthSquared() > 0.001) {
-            this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
-            this.applyTorque(this.body, this._tempVec1);
-        }
+        this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
+        this.applyTorque(this.body, this._tempVec1);
     }
 
     public getSpeedKmh(): number {
