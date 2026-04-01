@@ -24,6 +24,7 @@ export interface ArcadeCarConfig {
     // Air Control
     airPitchForce: number;
     airRollForce: number;
+    airYawForce: number;
     autoLevelForce: number;
 
     // Suspension / Ground Detection
@@ -31,27 +32,28 @@ export interface ArcadeCarConfig {
 }
 
 const DEFAULT_CONFIG: ArcadeCarConfig = {
-    mass: 1200,
+    mass: 1000,
 
-    accelerationForce: 30000,
-    brakingForce: 45000,
-    reverseForce: 15000,
-    maxSpeedKmh: 180,
+    accelerationForce: 45000,
+    brakingForce: 60000,
+    reverseForce: 20000,
+    maxSpeedKmh: 300,
 
-    baseTurnSpeed: 3.5,
-    highSpeedTurnFactor: 0.4,
-    turnSpeedRampKmh: 180,
+    baseTurnSpeed: 3,
+    highSpeedTurnFactor: 0.45,
+    turnSpeedRampKmh: 250,
     lowSpeedSteerRampKmh: 60,
-    steeringSmoothing: 20,
+    steeringSmoothing: 18,
 
-    lateralGrip: 0.99,
-    downforceFactor: 150,
+    lateralGrip: 0.85,
+    downforceFactor: 100,
 
-    airPitchForce: 8000,
-    airRollForce: 8000,
-    autoLevelForce: 6000,
+    airPitchForce: 15000,
+    airRollForce: 12000,
+    airYawForce: 10000,
+    autoLevelForce: 2000,
 
-    groundCheckDistance: 0.8
+    groundCheckDistance: 0.6
 };
 
 export class ArcadeCar {
@@ -95,8 +97,8 @@ export class ArcadeCar {
         }, this.scene);
         this.body = aggregate.body;
 
-        this.body.setAngularDamping(3.0);
-        this.body.setLinearDamping(0.05);
+        this.body.setAngularDamping(0.5);
+        this.body.setLinearDamping(0.01);
     }
 
     public update(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean): void {
@@ -153,7 +155,6 @@ export class ArcadeCar {
             const speedRatio = Math.min(1.0, (currentSpeedKmh - this.config.lowSpeedSteerRampKmh) / (this.config.turnSpeedRampKmh - this.config.lowSpeedSteerRampKmh));
             steerMultiplier = 1.0 - (1.0 - this.config.highSpeedTurnFactor) * speedRatio;
         }
-
         const turnSpeed = this.config.baseTurnSpeed * steerMultiplier;
 
         if (left) this.targetSteerAngle = -turnSpeed;
@@ -183,6 +184,7 @@ export class ArcadeCar {
         upVec.scaleToRef(yawError * 0.8, this._tempVec1);
         this._angVel.addInPlace(this._tempVec1);
         this.body.setAngularVelocity(this._angVel);
+
 
         // --- ACCELERATION / BRAKING ---
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
@@ -219,15 +221,16 @@ export class ArcadeCar {
         }
 
         // --- DOWNFORCE ---
-        if (currentSpeedKmh > 50) {
-            const df = -this.config.downforceFactor * (currentSpeedKmh / 50);
+        // Strong downforce at speed for stability; TM cars feel planted
+        if (currentSpeedKmh > 80) {
+            const df = -this.config.downforceFactor * ((currentSpeedKmh - 80) / 50);
             upVec.scaleToRef(df, this._tempVec1);
             this.body.applyForce(this._tempVec1, pos);
         }
     }
 
     private handleAirborne(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean, upVec: Vector3, rightVec: Vector3, forwardVec: Vector3): void {
-        // --- AIR CONTROL ---
+        // --- AIR PITCH ---
         if (forward) {
              rightVec.scaleToRef(this.config.airPitchForce, this._tempVec1);
              this.applyTorque(this.body, this._tempVec1);
@@ -236,6 +239,7 @@ export class ArcadeCar {
              this.applyTorque(this.body, this._tempVec1);
         }
 
+        // --- AIR ROLL ---
         if (left) {
              forwardVec.scaleToRef(this.config.airRollForce, this._tempVec1);
              this.applyTorque(this.body, this._tempVec1);
@@ -244,7 +248,18 @@ export class ArcadeCar {
              this.applyTorque(this.body, this._tempVec1);
         }
 
+        // --- AIR YAW ---
+        // TM-style: allows steering while airborne to land facing the right direction
+        if (left) {
+            upVec.scaleToRef(-this.config.airYawForce, this._tempVec1);
+            this.applyTorque(this.body, this._tempVec1);
+        } else if (right) {
+            upVec.scaleToRef(this.config.airYawForce, this._tempVec1);
+            this.applyTorque(this.body, this._tempVec1);
+        }
+
         // --- AUTO LEVELING ---
+        // Gentle auto-level — TM lets you hold orientations rather than fighting back hard
         Vector3.CrossToRef(upVec, this._worldUp, this._alignTorqueDir);
         if (this._alignTorqueDir.lengthSquared() > 0.001) {
             this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
