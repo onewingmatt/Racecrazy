@@ -228,7 +228,7 @@ export class BlockRegistry {
      * Spawns a wall instance on a specific local edge of a block.
      * edge: "left", "right", "forward", "backward"
      */
-    public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, blockType: string): InstancedMesh {
+    public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, blockType: string): InstancedMesh | null {
         let wallType = "flat";
         if (blockType === "ramp" && (localEdge === "left" || localEdge === "right")) {
             wallType = "ramp";
@@ -242,11 +242,11 @@ export class BlockRegistry {
             // Outer curve actually covers both 'left' and 'forward' edges inherently.
             // To prevent creating exact duplicate walls when both edges are requested by TrackParser,
             // we will only spawn "turn_outer" once (e.g., when 'left' is called).
-            if (localEdge === "forward") return null as any;
-            if (localEdge === "backward") return null as any; // No wall on entrance edge, it's open
+            if (localEdge === "forward") return null;
+            if (localEdge === "backward") return null; // No wall on entrance edge, it's open
         }
         const baseWall = this.wallMeshes[wallType];
-        if (!baseWall) return null as any;
+        if (!baseWall) return null;
 
         const instance = baseWall.createInstance(`wall_${x}_${y}_${z}_${localEdge}`);
 
