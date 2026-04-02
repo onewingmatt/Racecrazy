@@ -126,7 +126,7 @@ export class BlockRegistry {
         // A wall sits ON the edge of a block.
         // If a block is at (0,0,0) with size 10x10, its "Right" edge is at X = 5.
         // We build the generic wall mesh to be centered at (0,0,0) and we'll translate it when spawning.
-        const wallThickness = 0.4;
+        const wallThickness = 0.6;  // Thicker barrier to prevent high-speed snagging at exact boundary
         const wallHeight = 1.0;
 
         // Flat Wall

@@ -4,6 +4,11 @@ export class InputManager {
     public isLeftDown: boolean = false;
     public isRightDown: boolean = false;
 
+    // Analog input values (range -1 to 1). 0 if digital-only input.
+    public steerInput: number = 0;     // -1 (left) to 1 (right)
+    public throttleInput: number = 0;  // 0 to 1
+    public brakeInput: number = 0;     // 0 to 1
+
     // Singular action triggers
     public isRestartDown: boolean = false;
     public isGhostToggleDown: boolean = false;
@@ -192,6 +197,57 @@ export class InputManager {
                 break;
         }
     };
+
+    // Poll a connected gamepad (Gamepad API). Updates both boolean flags AND analog values.
+    public pollGamepad(): void {
+        const gamepads = navigator.getGamepads();
+        if (!gamepads) return;
+
+        // Use the first connected gamepad
+        let gp: Gamepad | null = null;
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i] !== null) {
+                gp = gamepads[i] as Gamepad;
+                break;
+            }
+        }
+        if (!gp) return;
+
+        // Standard gamepad mapping (Xbox/PS):
+        // Axes: [0] left stick X, [1] left stick Y
+        // Buttons: [7] RT (throttle), [6] LT (brake), [0] A/Cross, [2] X/Square, [9] R bumper
+        const stickX = this.deadzone(gp.axes[0] ?? 0);
+        const rt = gp.buttons[7]?.value ?? (gp.buttons[7]?.pressed ? 1 : 0);
+        const lt = gp.buttons[6]?.value ?? (gp.buttons[6]?.pressed ? 1 : 0);
+
+        // Analog values
+        this.steerInput = stickX;
+        this.throttleInput = rt;
+        this.brakeInput = lt;
+
+        // Update boolean flags from gamepad (DPAD or buttons also map to movement)
+        const dpadLeft = gp.buttons[14]?.pressed ?? false;
+        const dpadRight = gp.buttons[15]?.pressed ?? false;
+
+        this.isLeftDown = dpadLeft || stickX < -0.3;
+        this.isRightDown = dpadRight || stickX > 0.3;
+        this.isForwardDown = rt > 0.1 || (gp.buttons[0]?.pressed ?? false);
+        this.isBackDown = lt > 0.1 || (gp.buttons[2]?.pressed ?? false);
+
+        // D-pad also maps to forward/back on some controllers
+        const dpadUp = gp.buttons[12]?.pressed ?? false;
+        const dpadDown = gp.buttons[13]?.pressed ?? false;
+        if (dpadUp) this.isForwardDown = true;
+        if (dpadDown) this.isBackDown = true;
+
+        // Restart = Start/Options button, Ghost toggle = Select/Share
+        if (gp.buttons[9]?.pressed) this.isRestartDown = true;
+        if (gp.buttons[8]?.pressed) this.isGhostToggleDown = true;
+    }
+
+    private deadzone(value: number, threshold: number = 0.15): number {
+        return Math.abs(value) < threshold ? 0 : value;
+    }
 
     // Clear singular press events after frame loop so they don't trigger rapidly
     public resetPerFrameInputs(): void {

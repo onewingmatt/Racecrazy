@@ -203,6 +203,9 @@ export class App {
     private fixedUpdate(dt: number): void {
         if (this.menuUI.isVisible()) return;
 
+        // Poll gamepad before reading input flags so it can override keyboard state
+        this.inputManager.pollGamepad();
+
         if (this.inputManager.isRestartDown && !this.resultsUI.isVisible()) {
             this.resetRace();
         }

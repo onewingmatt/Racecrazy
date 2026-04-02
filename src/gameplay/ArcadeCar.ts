@@ -20,6 +20,8 @@ export interface ArcadeCarConfig {
     // Grip & Handling
     lateralGrip: number;
     downforceFactor: number;
+    lowSpeedSteerSmoothing: number;
+    highSpeedSteerSmoothing: number;
 
     // Air Control
     airPitchForce: number;
@@ -29,6 +31,7 @@ export interface ArcadeCarConfig {
 
     // Suspension / Ground Detection
     groundCheckDistance: number;
+    groundRaySpread: number;  // How far apart the 4 corner rays are (in local space)
 }
 
 const DEFAULT_CONFIG: ArcadeCarConfig = {
@@ -39,15 +42,17 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 20000,
     maxSpeedKmh: 280,
 
-    baseTurnSpeed: 3.5,
-    highSpeedTurnFactor: 0.4,
+    baseTurnSpeed: 2.8,
+    highSpeedTurnFactor: 0.55,
     turnSpeedRampKmh: 200,
-    lowSpeedSteerRampKmh: 50,
+    lowSpeedSteerRampKmh: 80,
     steeringSmoothing: 20,
 
     // Grip — TM has strong lateral bite but not rail-sharp
-    lateralGrip: 0.97,
+    lateralGrip: 0.92,
     downforceFactor: 150,
+    lowSpeedSteerSmoothing: 15.0,
+    highSpeedSteerSmoothing: 30.0,
 
     // Air control: only pitch and roll for corrective input, no yaw spin
     airPitchForce: 3000,
@@ -55,7 +60,8 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     airYawForce: 0,
     autoLevelForce: 8000,
 
-    groundCheckDistance: 0.6
+    groundCheckDistance: 0.6,
+    groundRaySpread: 1.0,  // 1m spread gives us corners for the 1.8m-wide car
 };
 
 export class ArcadeCar {
@@ -82,6 +88,8 @@ export class ArcadeCar {
     private _gripPos = Vector3.Zero();
     private _worldUp = Vector3.Up();
     private _groundRay = new Ray(Vector3.Zero(), Vector3.Zero(), 0);
+    private _cornerLocal = Vector3.Zero();
+    private _cornerWorld = Vector3.Zero();
 
     constructor(private scene: Scene, config?: Partial<ArcadeCarConfig>) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -126,26 +134,74 @@ export class ArcadeCar {
         }
     }
 
+    /**
+     * Multi-ray ground check using 4 rays at the corners of the car bounding box.
+     * Grounded only if at least 2 of 4 rays hit — prevents false triggers on ramp transitions
+     * where a single corner ray might find ground even though the car is partially airborne.
+     */
     private checkGrounded(): void {
-        const pos = this.mesh.getAbsolutePosition();
+        const spread = this.config.groundRaySpread;
+        const halfSpread = spread * 0.5;
+        const dist = this.config.groundCheckDistance;
 
-        Vector3.TransformNormalToRef(Vector3.Down(), this.mesh.getWorldMatrix(), this._downVec);
+        // Corner offsets in local space: front-left, front-right, back-left, back-right
+        const corners = [
+            [ halfSpread, halfSpread],  // front
+            [-halfSpread, halfSpread],  // front
+            [ halfSpread,-halfSpread],  // back
+            [-halfSpread,-halfSpread],  // back
+        ];
+
+        const worldMatrix = this.mesh.getWorldMatrix();
+
+        // Get the car's local down direction (accounts for pitch/roll)
+        Vector3.TransformNormalToRef(Vector3.Down(), worldMatrix, this._downVec);
         this._downVec.normalize();
 
-        // update picking ray
-        this._groundRay.origin.copyFrom(pos);
-        this._groundRay.direction.copyFrom(this._downVec);
-        this._groundRay.length = this.config.groundCheckDistance;
+        let hits = 0;
 
-        // This picks any mesh. To avoid picking the car itself, we filter.
-        const pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
+        for (let i = 0; i < corners.length; i++) {
+            const [dx, dz] = corners[i];
+            // Transform local corner offset to world space, then add to car position
+            this._cornerLocal.set(dx, 0, dz);
+            Vector3.TransformCoordinatesToRef(this._cornerLocal, worldMatrix, this._cornerWorld);
 
-        this.isGrounded = pickResult?.hit ?? false;
+            this._groundRay.origin.set(this._cornerWorld.x, this._cornerWorld.y, this._cornerWorld.z);
+            this._groundRay.direction.copyFrom(this._downVec);
+            this._groundRay.length = dist;
+
+            const pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
+
+            if (pickResult?.hit) {
+                hits++;
+            }
+        }
+
+        // Require at least 2 corners grounded to consider the car grounded
+        this.isGrounded = hits >= 2;
     }
 
     private applyTorque(body: PhysicsBody, torque: Vector3): void {
          torque.scaleToRef(1/60, this._tempVec1);
          body.applyAngularImpulse(this._tempVec1);
+    }
+
+    /**
+     * Returns a speed-dependent steering smoothing factor.
+     * Low speed → less smoothing (snappier response).
+     * High speed → more smoothing (filters twitchy inputs for stability).
+     */
+    private getSteerSmoothing(currentSpeedKmh: number): number {
+        if (currentSpeedKmh <= this.config.lowSpeedSteerRampKmh) {
+            return this.config.lowSpeedSteerSmoothing;
+        }
+        if (currentSpeedKmh >= this.config.turnSpeedRampKmh) {
+            return this.config.highSpeedSteerSmoothing;
+        }
+        const t = (currentSpeedKmh - this.config.lowSpeedSteerRampKmh) /
+                  (this.config.turnSpeedRampKmh - this.config.lowSpeedSteerRampKmh);
+        return this.config.lowSpeedSteerSmoothing +
+               (this.config.highSpeedSteerSmoothing - this.config.lowSpeedSteerSmoothing) * t;
     }
 
     private handleGrounded(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean, vel: Vector3, forwardVec: Vector3, rightVec: Vector3, upVec: Vector3, currentSpeedKmh: number): void {
@@ -164,8 +220,8 @@ export class ArcadeCar {
         else this.targetSteerAngle = 0;
 
         // Linearly interpolate current steer angle towards target to filter twitchy micro-inputs
-        const steerDiff = this.targetSteerAngle - this.steerAngle;
-        this.steerAngle += steerDiff * Math.min(1.0, _dt * this.config.steeringSmoothing);
+        const smoothing = this.getSteerSmoothing(currentSpeedKmh);
+        this.steerAngle += (this.targetSteerAngle - this.steerAngle) * Math.min(1.0, _dt * smoothing);
 
         // Direct yaw-rate control for Trackmania "snap-to-straight" feel
         const dotForward = Vector3.Dot(vel, forwardVec);
