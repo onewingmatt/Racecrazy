@@ -31,7 +31,11 @@ export interface ArcadeCarConfig {
 
     // Suspension / Ground Detection
     groundCheckDistance: number;
-    groundRaySpread: number;  // How far apart the 4 corner rays are (in local space)
+    groundRaySpread: number;
+
+    // Flip Recovery
+    flipThreshold: number;
+    flipRecoveryTime: number;
 }
 
 const DEFAULT_CONFIG: ArcadeCarConfig = {
@@ -48,20 +52,21 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     lowSpeedSteerRampKmh: 80,
     steeringSmoothing: 20,
 
-    // Grip — TM has strong lateral bite but not rail-sharp
     lateralGrip: 0.92,
     downforceFactor: 150,
     lowSpeedSteerSmoothing: 15.0,
     highSpeedSteerSmoothing: 30.0,
 
-    // Air control: only pitch and roll for corrective input, no yaw spin
     airPitchForce: 3000,
     airRollForce: 2000,
     airYawForce: 0,
     autoLevelForce: 8000,
 
     groundCheckDistance: 0.6,
-    groundRaySpread: 1.0,  // 1m spread gives us corners for the 1.8m-wide car
+    groundRaySpread: 1.0,
+
+    flipThreshold: 0.0,       // upVec·worldUp < 0 = upside-down
+    flipRecoveryTime: 2.5,    // 2.5s of being flipped triggers respawn
 };
 
 export class ArcadeCar {
@@ -73,6 +78,12 @@ export class ArcadeCar {
     private steerAngle = 0;
     private targetSteerAngle = 0;
     private isGrounded = false;
+
+    // Flip recovery state
+    public isFlipped = false;
+    public flipRecoveryTimer = 0;
+    private _lastGroundedPos = Vector3.Zero();
+    private _lastGroundedRot = Quaternion.Identity();
 
     // Pre-allocated vectors for hot-paths
     private _upVec = Vector3.Zero();
@@ -116,6 +127,13 @@ export class ArcadeCar {
         this.currentSpeedMs = this._vel.length();
         const currentSpeedKmh = this.getSpeedKmh();
 
+        // Track last grounded position for respawn
+        if (this.isGrounded) {
+            this.mesh.getAbsolutePosition().toArray(this._lastGroundedPos.asArray());
+            const q = this.mesh.rotationQuaternion || Quaternion.Identity();
+            this._lastGroundedRot.copyFrom(q);
+        }
+
         // Ensure we have an up to date world matrix
         this.mesh.computeWorldMatrix(true);
         const transform = this.mesh.getWorldMatrix();
@@ -127,6 +145,28 @@ export class ArcadeCar {
         Vector3.TransformNormalToRef(Vector3.Forward(), transform, this._forwardVec);
         Vector3.TransformNormalToRef(Vector3.Right(), transform, this._rightVec);
 
+        // --- Flip Detection ---
+        const upDot = Vector3.Dot(this._upVec, this._worldUp);
+        const wasFlipped = this.isFlipped;
+        this.isFlipped = upDot < this.config.flipThreshold;
+
+        if (this.isFlipped) {
+            this.flipRecoveryTimer += _dt;
+        } else {
+            this.flipRecoveryTimer = Math.max(0, this.flipRecoveryTimer - _dt * 3);
+        }
+
+        // If flipped too long, reset to last grounded position
+        if (this.flipRecoveryTimer >= this.config.flipRecoveryTime) {
+            this._resetToLastSafePose();
+            return;
+        }
+
+        // Only update flip state if it changed (so we can show a UI message)
+        if (this.isFlipped && !wasFlipped) {
+            // flipped state changed - could trigger UI
+        }
+
         if (this.isGrounded) {
             this.handleGrounded(_dt, forward, back, left, right, this._vel, this._forwardVec, this._rightVec, this._upVec, currentSpeedKmh);
         } else {
@@ -136,25 +176,22 @@ export class ArcadeCar {
 
     /**
      * Multi-ray ground check using 4 rays at the corners of the car bounding box.
-     * Grounded only if at least 2 of 4 rays hit — prevents false triggers on ramp transitions
-     * where a single corner ray might find ground even though the car is partially airborne.
+     * Grounded only if at least 2 of 4 rays hit.
      */
     private checkGrounded(): void {
         const spread = this.config.groundRaySpread;
         const halfSpread = spread * 0.5;
         const dist = this.config.groundCheckDistance;
 
-        // Corner offsets in local space: front-left, front-right, back-left, back-right
         const corners = [
-            [ halfSpread, halfSpread],  // front
-            [-halfSpread, halfSpread],  // front
-            [ halfSpread,-halfSpread],  // back
-            [-halfSpread,-halfSpread],  // back
+            [ halfSpread, halfSpread],
+            [-halfSpread, halfSpread],
+            [ halfSpread,-halfSpread],
+            [-halfSpread,-halfSpread],
         ];
 
         const worldMatrix = this.mesh.getWorldMatrix();
 
-        // Get the car's local down direction (accounts for pitch/roll)
         Vector3.TransformNormalToRef(Vector3.Down(), worldMatrix, this._downVec);
         this._downVec.normalize();
 
@@ -162,7 +199,6 @@ export class ArcadeCar {
 
         for (let i = 0; i < corners.length; i++) {
             const [dx, dz] = corners[i];
-            // Transform local corner offset to world space, then add to car position
             this._cornerLocal.set(dx, 0, dz);
             Vector3.TransformCoordinatesToRef(this._cornerLocal, worldMatrix, this._cornerWorld);
 
@@ -177,7 +213,6 @@ export class ArcadeCar {
             }
         }
 
-        // Require at least 2 corners grounded to consider the car grounded
         this.isGrounded = hits >= 2;
     }
 
@@ -186,11 +221,6 @@ export class ArcadeCar {
          body.applyAngularImpulse(this._tempVec1);
     }
 
-    /**
-     * Returns a speed-dependent steering smoothing factor.
-     * Low speed → less smoothing (snappier response).
-     * High speed → more smoothing (filters twitchy inputs for stability).
-     */
     private getSteerSmoothing(currentSpeedKmh: number): number {
         if (currentSpeedKmh <= this.config.lowSpeedSteerRampKmh) {
             return this.config.lowSpeedSteerSmoothing;
@@ -219,30 +249,21 @@ export class ArcadeCar {
         else if (right) this.targetSteerAngle = turnSpeed;
         else this.targetSteerAngle = 0;
 
-        // Linearly interpolate current steer angle towards target to filter twitchy micro-inputs
         const smoothing = this.getSteerSmoothing(currentSpeedKmh);
         this.steerAngle += (this.targetSteerAngle - this.steerAngle) * Math.min(1.0, _dt * smoothing);
 
-        // Direct yaw-rate control for Trackmania "snap-to-straight" feel
+        // Direct yaw-rate control
         const dotForward = Vector3.Dot(vel, forwardVec);
         const reverseFactor = dotForward < -0.1 ? -1 : 1;
-
-        // Desired yaw angular velocity based on steering input
         const targetYawVel = this.steerAngle * reverseFactor;
 
         this.body.getAngularVelocityToRef(this._angVel);
         const currentYawVel = Vector3.Dot(this._angVel, upVec);
-
-        // Calculate the difference between current and target yaw rate
         const yawError = targetYawVel - currentYawVel;
 
-        // Directly inject the missing angular velocity to perfectly match the target every frame.
-        // This completely eliminates any "boat-like" pendulum effect and stops spinning instantly when key released.
-        // We use a blend factor (0.5 to 1.0) so it doesn't violently snap the physics engine, but feels instant.
         upVec.scaleToRef(yawError * 0.8, this._tempVec1);
         this._angVel.addInPlace(this._tempVec1);
         this.body.setAngularVelocity(this._angVel);
-
 
         // --- ACCELERATION / BRAKING ---
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
@@ -267,11 +288,10 @@ export class ArcadeCar {
             }
         }
 
-        // --- GRIP (Cancel lateral velocity) ---
+        // --- GRIP ---
         const latVel = Vector3.Dot(vel, rightVec);
         if (Math.abs(latVel) > 0.1) {
-            // Apply lateral grip impulse slightly behind the center of mass to create a weather-vane stabilizing effect
-            forwardVec.scaleToRef(-0.4, this._tempVec1); // offset distance
+            forwardVec.scaleToRef(-0.4, this._tempVec1);
             pos.addToRef(this._tempVec1, this._gripPos);
 
             rightVec.scaleToRef(-latVel * this.config.mass * this.config.lateralGrip, this._gripImpulse);
@@ -279,7 +299,6 @@ export class ArcadeCar {
         }
 
         // --- DOWNFORCE ---
-        // Strong downforce at speed for stability; TM cars feel planted
         if (currentSpeedKmh > 80) {
             const df = -this.config.downforceFactor * ((currentSpeedKmh - 80) / 50);
             upVec.scaleToRef(df, this._tempVec1);
@@ -298,7 +317,6 @@ export class ArcadeCar {
         }
 
         // --- AIR ROLL ---
-        // TM Nations uses left/right for gentle roll correction in air — no yaw torque
         if (left) {
              forwardVec.scaleToRef(this.config.airRollForce, this._tempVec1);
              this.applyTorque(this.body, this._tempVec1);
@@ -308,10 +326,29 @@ export class ArcadeCar {
         }
 
         // --- AUTO LEVELING ---
-        // Stronger auto-level so the car returns to stable flight quickly
         Vector3.CrossToRef(upVec, this._worldUp, this._alignTorqueDir);
         this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
         this.applyTorque(this.body, this._tempVec1);
+    }
+
+    /**
+     * Hard-reset the car to the last known grounded pose.
+     * Used for flip recovery and manual respawn.
+     */
+    private _resetToLastSafePose(): void {
+        const pos = this._lastGroundedPos.clone();
+        pos.y += 1.0;
+
+        this.mesh.position = pos;
+        this.mesh.rotationQuaternion = this._lastGroundedRot.clone();
+
+        this.body.setLinearVelocity(Vector3.Zero());
+        this.body.setAngularVelocity(Vector3.Zero());
+
+        this.steerAngle = 0;
+        this.targetSteerAngle = 0;
+        this.flipRecoveryTimer = 0;
+        this.isFlipped = false;
     }
 
     public getSpeedKmh(): number {
@@ -319,8 +356,8 @@ export class ArcadeCar {
     }
 
     public setPosition(pos: Vector3, rotationDeg: number): void {
-        this.mesh.position = pos.clone();
         const rad = rotationDeg * (Math.PI / 180);
+        this.mesh.position = pos.clone();
         this.mesh.rotationQuaternion = Quaternion.FromEulerAngles(0, rad, 0);
 
         this.body.setLinearVelocity(Vector3.Zero());
@@ -328,26 +365,24 @@ export class ArcadeCar {
 
         this.steerAngle = 0;
         this.targetSteerAngle = 0;
+        this.flipRecoveryTimer = 0;
+        this.isFlipped = false;
+        this._lastGroundedPos = pos.clone();
+        this._lastGroundedRot = Quaternion.FromEulerAngles(0, rad, 0);
 
         this.body.disablePreStep = false;
     }
 
     /**
      * Applies a sudden forward impulse to simulate a boost pad hit.
-     * Adds to current velocity rather than replacing it, so existing speed compounds.
-     * @param forwardDir The forward direction of the boost pad
-     * @param boostSpeedMs The additional speed to add in m/s (default ~30 m/s = 108 km/h)
      */
     public applyBoost(forwardDir: Vector3, boostSpeedMs: number = 30): void {
         this.body.getLinearVelocityToRef(this._vel);
         const currentSpeed = this._vel.length();
         const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
-        const targetSpeed = Math.min(currentSpeed + boostSpeedMs, maxSpeedMs * 1.15); // allow slight over-max on boost
+        const targetSpeed = Math.min(currentSpeed + boostSpeedMs, maxSpeedMs * 1.15);
 
-        // Blend towards the target velocity along the boost pad direction
-        const newSpeed = Math.min(targetSpeed, maxSpeedMs * 1.15);
-        forwardDir.normalize().scaleToRef(newSpeed, this._tempVec1);
-
+        forwardDir.normalize().scaleToRef(targetSpeed, this._tempVec1);
         this.body.setLinearVelocity(this._tempVec1);
     }
 }

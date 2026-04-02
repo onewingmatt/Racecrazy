@@ -1,4 +1,4 @@
-import { Vector3, Quaternion } from "@babylonjs/core";
+import { Vector3, Quaternion, Mesh } from "@babylonjs/core";
 import { Renderer } from "../rendering/Renderer";
 import { PhysicsEngine } from "../physics/PhysicsEngine";
 import { BlockRegistry } from "../track/BlockRegistry";
@@ -158,6 +158,14 @@ export class App {
         this.car.setPosition(this.parsedTrack.startPosition, this.parsedTrack.startRotationDeg);
         this.raceManager.startRace(this.parsedTrack.id, this.parsedTrack.checkpoints.length, this.parsedTrack.medals);
 
+        // Store start position for respawn
+        const startPos = [
+            this.parsedTrack.startPosition.x,
+            this.parsedTrack.startPosition.y,
+            this.parsedTrack.startPosition.z
+        ];
+        this.raceManager.setStartPosition(startPos, this.parsedTrack.startRotationDeg);
+
         // Prepare Ghost logic
         this.ghostBuffer = []; // Clear recorded ghost frames on restart
         this.ghostManager.resetPlayback();
@@ -225,7 +233,14 @@ export class App {
         this.inputManager.pollGamepad();
 
         if (this.inputManager.isRestartDown && !this.resultsUI.isVisible()) {
-            this.resetRace();
+            // During race: respawn to last checkpoint. When finished or ready: full reset
+            if (this.raceManager.state === RaceState.RACING) {
+                this.respawnToCheckpoint();
+            } else if (this.raceManager.state === RaceState.FINISHED) {
+                this.resetRace();
+            } else {
+                this.resetRace();
+            }
         }
 
         if (this.inputManager.isGhostToggleDown) {
@@ -264,6 +279,26 @@ export class App {
         // Check boost pads
         this.checkBoostPads();
 
+        // Update countdown
+        if (this.raceManager.state === RaceState.READY) {
+            const countVal = this.raceManager.updateCountdown(dt);
+            if (countVal === 3) this.ui.showCountdown("3", "#FFFFFF");
+            else if (countVal === 2) this.ui.showCountdown("2", "#FFEE44");
+            else if (countVal === 1) this.ui.showCountdown("1", "#FFAA00");
+            else if (countVal === 0) {
+                this.ui.showCountdown("GO!", "#44FF44");
+                setTimeout(() => this.ui.hideCountdown(), 600);
+            }
+        }
+
+        // Update flip recovery UI
+        if (this.car.isFlipped && this.raceManager.state === RaceState.RACING) {
+            const pct = Math.min(1, this.car.flipRecoveryTimer / 2.5);
+            this.ui.updateFlipRecovery(pct);
+        } else if (this.raceManager.state === RaceState.RACING) {
+            this.ui.hideFlipRecovery();
+        }
+
         // Record ghost snapshot if racing
         if (this.raceManager.state !== RaceState.FINISHED) {
             this.ghostBuffer.push(this.createSnapshot(this.raceManager.raceTime));
@@ -278,6 +313,9 @@ export class App {
         for (const cp of this.parsedTrack.checkpoints) {
             if (this.isInVolume(carPos, cp.mesh)) {
                 if (this.raceManager.hitCheckpoint(cp.id)) {
+                    // Store position for respawn
+                    const cpWorldPos = cp.mesh.getAbsolutePosition();
+                    this.raceManager.addCheckpointPosition(cp.id, [cpWorldPos.x, cpWorldPos.y, cpWorldPos.z], cp.mesh.rotation.y * (180 / Math.PI));
                     this.ui.showMessage(`CHECKPOINT ${cp.id + 1}!`);
                 }
             }
@@ -298,7 +336,24 @@ export class App {
         }
     }
 
-    private isInVolume(pos: Vector3, volume: any): boolean {
+    /**
+     * Respawn the car to the last checkpoint (or start line).
+     * TM Nations style: keeps race time, returns to last checkpoint.
+     */
+    private respawnToCheckpoint(): void {
+        const respawn = this.raceManager.getRespawnPosition();
+        if (!respawn) return;
+
+        const pos = new Vector3(respawn.position[0], respawn.position[1] + 1, respawn.position[2]);
+        this.car.setPosition(pos, respawn.rotationDeg);
+
+        // Reset ghost from this point forward (don't let pre-respawn frames contaminate)
+        // Actually in TM Nations the ghost continues normally, so keep recording
+
+        this.ui.showMessage("RESPAWN");
+    }
+
+    private isInVolume(pos: Vector3, volume: Mesh): boolean {
         // Very rudimentary AABB check for trigger volumes
         const volPos = volume.getAbsolutePosition();
         const dist = Vector3.Distance(pos, volPos);

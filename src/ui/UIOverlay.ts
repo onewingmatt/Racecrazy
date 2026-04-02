@@ -9,6 +9,11 @@ export class UIOverlay {
     private checkpointProgressElement: HTMLDivElement;
     private ghostStatusElement: HTMLDivElement;
 
+    // Countdown overlay (3-2-1-GO)
+    private countdownElement: HTMLDivElement;
+    // Flip recovery progress bar
+    private flipRecoveryElement: HTMLDivElement;
+
     constructor() {
         // Base container styling
         this.container = document.createElement("div");
@@ -107,6 +112,29 @@ export class UIOverlay {
         this.container.appendChild(this.messageElement);
         this.container.appendChild(this.persistentMessageElement);
 
+        // Countdown overlay
+        this.countdownElement = document.createElement("div");
+        this.countdownElement.style.position = "absolute";
+        this.countdownElement.style.top = "40%";
+        this.countdownElement.style.width = "100%";
+        this.countdownElement.style.textAlign = "center";
+        this.countdownElement.style.fontSize = "min(20vw, 160px)";
+        this.countdownElement.style.fontWeight = "900";
+        this.countdownElement.style.opacity = "0";
+        this.countdownElement.style.transition = "opacity 0.2s";
+        this.container.appendChild(this.countdownElement);
+
+        // Flip recovery indicator
+        this.flipRecoveryElement = document.createElement("div");
+        this.flipRecoveryElement.style.position = "absolute";
+        this.flipRecoveryElement.style.top = "60%";
+        this.flipRecoveryElement.style.width = "100%";
+        this.flipRecoveryElement.style.textAlign = "center";
+        this.flipRecoveryElement.style.fontSize = "min(6vw, 48px)";
+        this.flipRecoveryElement.style.color = "#FF4444";
+        this.flipRecoveryElement.style.opacity = "0";
+        this.container.appendChild(this.flipRecoveryElement);
+
         document.body.appendChild(this.container);
     }
 
@@ -152,5 +180,33 @@ export class UIOverlay {
 
     public hidePersistentMessage(): void {
         this.persistentMessageElement.style.display = "none";
+    }
+
+    public showCountdown(text: string, color: string = "#FFD700"): void {
+        this.countdownElement.innerText = text;
+        this.countdownElement.style.color = color;
+        this.countdownElement.style.opacity = "1";
+        this.countdownElement.style.transform = "scale(1.2)";
+        setTimeout(() => {
+            this.countdownElement.style.transform = "scale(1.0)";
+        }, 100);
+    }
+
+    public hideCountdown(): void {
+        this.countdownElement.style.opacity = "0";
+    }
+
+    public updateFlipRecovery(pct: number): void {
+        if (pct <= 0) {
+            this.flipRecoveryElement.style.opacity = "0";
+            return;
+        }
+        const bar = "█".repeat(Math.floor(pct * 16)) + "░".repeat(16 - Math.floor(pct * 16));
+        this.flipRecoveryElement.innerText = `RESPAWNING [${bar}]`;
+        this.flipRecoveryElement.style.opacity = "0.7 + 0.3 * Math.sin(Date.now() * 0.01)";
+    }
+
+    public hideFlipRecovery(): void {
+        this.flipRecoveryElement.style.opacity = "0";
     }
 }

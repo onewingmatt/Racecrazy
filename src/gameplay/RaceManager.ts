@@ -32,6 +32,13 @@ export class RaceManager {
     public currentCheckpointId: number = -1;
     public maxCheckpoints: number = 0;
 
+    // Store checkpoint and start positions for respawn
+    public checkpointPositions: { id: number; position: number[]; rotationDeg: number }[] = [];
+    public startPosition: { position: number[]; rotationDeg: number } | null = null;
+
+    // Countdown state
+    public countdownPhase: number = -1; // -1 = inactive, 3/2/1 = countdown, 0 = GO
+
     // Debounce to prevent physics jitter from double-triggering a checkpoint
     private lastTriggerTime: number = 0;
     private readonly TRIGGER_COOLDOWN_MS = 500;
@@ -59,13 +66,69 @@ export class RaceManager {
 
     /**
      * Triggers the actual race timer. Usually called when the car first accelerates.
+     * Now starts a 3-2-1 countdown before racing.
      */
     public beginRacing(): void {
-        if (this.state === RaceState.READY) {
-            this.state = RaceState.RACING;
-            this.startTime = performance.now();
+        if (this.state === RaceState.READY && this.countdownPhase === -1) {
+            this.countdownPhase = 3;
         }
     }
+
+    /**
+     * Update countdown timer. Called every tick.
+     * Returns the current countdown display: 3, 2, 1, "GO", or -1 if inactive.
+     */
+    public updateCountdown(dt: number): number {
+        if (this.countdownPhase < 0) return -1;
+
+        // Store elapsed countdown time
+        if (!this._countdownElapsed) this._countdownElapsed = 0;
+        this._countdownElapsed += dt;
+
+        // Each phase lasts 0.7s
+        const phaseDuration = 0.7;
+        const elapsed = this._countdownElapsed;
+        const newPhase = 3 - Math.floor(elapsed / phaseDuration);
+
+        if (elapsed >= phaseDuration * 3 + 0.5) {
+            // Countdown done - start racing
+            this.countdownPhase = -1;
+            this._countdownElapsed = 0;
+            this.state = RaceState.RACING;
+            this.startTime = performance.now();
+            return -1;
+        }
+
+        this.countdownPhase = newPhase;
+        return newPhase;
+    }
+
+    /**
+     * Respawn the car to the last checkpoint (or start if no checkpoints hit).
+     * Keeps the current race time and race state.
+     */
+    public getRespawnPosition(): { position: number[]; rotationDeg: number } | null {
+        if (this.checkpointPositions.length === 0) {
+            return this.startPosition;
+        }
+        return this.checkpointPositions[this.checkpointPositions.length - 1];
+    }
+
+    public setStartPosition(pos: number[], rot: number): void {
+        this.startPosition = { position: pos, rotationDeg: rot };
+    }
+
+    public addCheckpointPosition(id: number, pos: number[], rot: number): void {
+        // Remove any checkpoints after this id (in case of respawn then re-hitting)
+        this.checkpointPositions = this.checkpointPositions.filter(cp => cp.id < id);
+        this.checkpointPositions.push({ id, position: pos, rotationDeg: rot });
+    }
+
+    public resetCheckpointData(): void {
+        this.checkpointPositions = [];
+    }
+
+    private _countdownElapsed: number = 0;
 
     public update(): void {
         if (this.state === RaceState.RACING) {
