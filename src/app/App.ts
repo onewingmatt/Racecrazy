@@ -29,6 +29,7 @@ export class App {
     private ui: UIOverlay;
     private menuUI: MenuUI;
     private resultsUI: ResultsUI;
+    private boostVisuals: { mesh: any; baseScale: number }[] = [];
 
     private parsedTrack: ParsedTrack | null = null;
     private currentTrackIndex: number = 0;
@@ -37,8 +38,11 @@ export class App {
     private ghostBuffer: PlayerFrameSnapshot[] = [];
     private isGhostEnabled: boolean = true;
 
-    // Boost pad cooldown: track last frame each pad was triggered to prevent double-hits
+    // Boost pad cooldown: track last raceTime each pad was triggered to prevent double-hits
     private boostPadCooldownMs: number[] = [];
+
+    // Boost pad animation
+    private _boostPhase = 0;
 
     constructor() {
         this.renderer = new Renderer();
@@ -114,6 +118,9 @@ export class App {
             if (this.parsedTrack.finishVolume) {
                 this.parsedTrack.finishVolume.dispose();
             }
+            // Dispose boost visuals
+            this.boostVisuals.forEach(bv => bv.mesh.dispose());
+            this.boostVisuals = [];
         }
 
         // Safely dispose of all track and wall instances
@@ -131,6 +138,11 @@ export class App {
         this.parsedTrack = this.parser.parse(trackData as any);
         this.menuUI.hide();
         this.resultsUI.hide();
+
+        // Track boost pad visual meshes for animation
+        this.boostVisuals = this.renderer.scene.meshes
+            .filter(m => m.name.startsWith("boost_vis_"))
+            .map(m => ({ mesh: m, baseScale: 1.0 }));
 
         // Load best local ghost for this track if it exists
         this.ghostManager.loadGhost(this.parsedTrack.id);
@@ -151,9 +163,7 @@ export class App {
         this.ghostManager.resetPlayback();
 
         // Reset boost pad cooldowns
-        if (this.parsedTrack) {
-            this.boostPadCooldownMs = new Array(this.parsedTrack.boostPads.length).fill(-99999);
-        }
+        this.boostPadCooldownMs = new Array(this.parsedTrack.boostPads.length).fill(-99999);
 
         if (this.raceManager.bestTime) {
             this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime));
@@ -315,27 +325,22 @@ export class App {
         }
     }
 
-    private _boostPhase = 0;
+    /**
+     * Pulse boost pad emissive color and scale to make them visually obvious.
+     */
+    private animateBoostPads(): void {
+        if (this.boostVisuals.length === 0) return;
 
-    private animateBoostPads(alpha: number): void {
-        if (!this.parsedTrack) return;
-        this._boostPhase += alpha * 0.016 * 4; // ~4Hz pulse
-        const pulse = 0.6 + 0.4 * Math.sin(this._boostPhase); // 0.6 to 1.0
-        const scalePulse = 0.9 + 0.1 * Math.sin(this._boostPhase);
+        this._boostPhase += 0.016 * 4; // ~4Hz pulse
+        const pulse = 0.6 + 0.4 * Math.sin(this._boostPhase);
+        const s = 0.9 + 0.1 * Math.sin(this._boostPhase);
 
-        for (const _pad of this.parsedTrack.boostPads) {
-            void _pad; // Ensure we only animate if boost pads exist
-            this.renderer.scene.meshes.forEach((mesh) => {
-                if (mesh.name.startsWith("boost_vis_")) {
-                    if (mesh.material && "emissiveColor" in mesh.material) {
-                        const mat = mesh.material as any;
-                        if (mat.emissiveColor) {
-                            mat.emissiveColor.set(0.8 * pulse, 0.4 * pulse, 0.0);
-                        }
-                    }
-                    mesh.scaling.set(scalePulse, scalePulse, scalePulse);
-                }
-            });
+        for (const bv of this.boostVisuals) {
+            const mat = bv.mesh.material as any;
+            if (mat && mat.emissiveColor) {
+                mat.emissiveColor.set(0.8 * pulse, 0.4 * pulse, 0.0);
+            }
+            bv.mesh.scaling.set(s, s, s);
         }
     }
 
@@ -356,7 +361,7 @@ export class App {
         }
 
         // Pulse boost pad visuals
-        this.animateBoostPads(_alpha);
+        this.animateBoostPads();
 
         // Update UI
         this.ui.updateSpeed(this.car.getSpeedKmh());
@@ -366,8 +371,7 @@ export class App {
         if (this.raceManager.state === RaceState.READY && !this.menuUI.isVisible()) {
             this.ui.showPersistentMessage("READY\n< PRESS W / UP >");
         } else if (this.raceManager.state === RaceState.FINISHED && !this.resultsUI.isVisible()) {
-             // Usually hidden by results UI, but fallback
-            this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\n< PRESS R TO RESTART >`);
+             this.ui.showPersistentMessage(`FINISHED: ${this.raceManager.formatTime(this.raceManager.raceTime)}\n< PRESS R TO RESTART >`);
         } else {
             this.ui.hidePersistentMessage();
         }
