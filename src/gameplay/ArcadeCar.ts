@@ -65,6 +65,22 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     groundCheckDistance: 0.6,
     groundRaySpread: 1.0,
 
+    baseTurnSpeed: 3.5,
+    highSpeedTurnFactor: 0.4,
+    turnSpeedRampKmh: 200,
+    lowSpeedSteerRampKmh: 50,
+    steeringSmoothing: 20,
+
+    // Grip — TM has strong lateral bite but not rail-sharp
+    lateralGrip: 0.96,
+    downforceFactor: 220,
+
+    // Air control: only pitch and roll for corrective input, no yaw spin
+    airPitchForce: 3000,
+    airRollForce: 2000,
+    airYawForce: 0,
+    autoLevelForce: 8000,
+
     flipThreshold: 0.0,       // upVec·worldUp < 0 = upside-down
     flipRecoveryTime: 2.5,    // 2.5s of being flipped triggers respawn
 };
@@ -114,12 +130,14 @@ export class ArcadeCar {
         const aggregate = new PhysicsAggregate(this.mesh, PhysicsShapeType.BOX, {
             mass: this.config.mass,
             friction: 0.02,
+            friction: 0.7,
             restitution: 0.1
         }, this.scene);
         this.body = aggregate.body;
 
         this.body.setAngularDamping(8.0);
         this.body.setLinearDamping(0.002);
+        this.body.setLinearDamping(0.005);
     }
 
     public update(_dt: number, forward: boolean, back: boolean, left: boolean, right: boolean): void {
@@ -317,6 +335,7 @@ export class ArcadeCar {
         }
 
         // --- AIR ROLL ---
+        // TM Nations uses left/right for gentle roll correction in air — no yaw torque
         if (left) {
              forwardVec.scaleToRef(this.config.airRollForce, this._tempVec1);
              this.applyTorque(this.body, this._tempVec1);
@@ -349,6 +368,10 @@ export class ArcadeCar {
         this.targetSteerAngle = 0;
         this.flipRecoveryTimer = 0;
         this.isFlipped = false;
+        // Stronger auto-level so the car returns to stable flight quickly
+        Vector3.CrossToRef(upVec, this._worldUp, this._alignTorqueDir);
+        this._alignTorqueDir.scaleToRef(this.config.autoLevelForce, this._tempVec1);
+        this.applyTorque(this.body, this._tempVec1);
     }
 
     public getSpeedKmh(): number {
