@@ -30,9 +30,14 @@ export class BlockRegistry {
         const finishMat = new StandardMaterial("finishMat", this.scene);
         finishMat.diffuseColor = new Color3(0.9, 0.3, 0.3);
 
-        const checkMat = new StandardMaterial("checkMat", this.scene);
+        const checkMat = new StandardMaterial("checkpoint", this.scene);
         checkMat.diffuseColor = new Color3(0.3, 0.5, 0.9);
         checkMat.alpha = 0.5;
+
+        const boostMat = new StandardMaterial("boostMat", this.scene);
+        boostMat.diffuseColor = new Color3(1.0, 0.6, 0.0);
+        boostMat.emissiveColor = new Color3(0.8, 0.4, 0.0);
+        boostMat.alpha = 0.9;
 
         this.materials["road"] = roadMat;
         this.materials["border"] = borderMat;
@@ -40,6 +45,7 @@ export class BlockRegistry {
         this.materials["start"] = startMat;
         this.materials["finish"] = finishMat;
         this.materials["checkpoint"] = checkMat;
+        this.materials["boost"] = boostMat;
     }
 
     public initializeBaseMeshes(): void {
@@ -164,6 +170,25 @@ export class BlockRegistry {
         slopedWall.name = "wall_ramp";
         slopedWall.isVisible = false;
         this.wallMeshes["ramp"] = slopedWall;
+
+        // --- Boost Pad ---
+        // Flat pad with a raised center arrow shape. Sits on top of a straight block.
+        const boostPadBase = MeshBuilder.CreateBox("base_boostBase", { width: s, depth: s, height: floorThickness }, this.scene);
+        boostPadBase.position.y = floorThickness / 2;
+        boostPadBase.bakeCurrentTransformIntoVertices();
+        boostPadBase.material = this.materials["road"];
+        boostPadBase.isVisible = false;
+        this.baseMeshes["boost"] = boostPadBase;  // Boost pad uses the same base as straight
+
+        // Boost pad visual marker - an orange glowing pad
+        const padWidth = s * 0.6;
+        const padDepth = s * 0.3;
+        const boostPadVisual = MeshBuilder.CreateBox("base_boostVisual", { width: padWidth, depth: padDepth, height: 0.15 }, this.scene);
+        boostPadVisual.position.y = floorThickness + 0.075;
+        boostPadVisual.bakeCurrentTransformIntoVertices();
+        boostPadVisual.material = this.materials["boost"];
+        boostPadVisual.isVisible = false;
+        this.baseMeshes["boostVisual"] = boostPadVisual;
 
         // Curved Walls for Turns
         const innerWallPathBottom: Vector3[] = [];
@@ -300,6 +325,31 @@ export class BlockRegistry {
         new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.0, friction: 0.0 }, this.scene);
 
         return instance;
+    }
+
+    /**
+     * Creates a boost pad at the given grid position.
+     * Returns the visual mesh for the boost pad (position tracking uses distance in App.ts).
+     */
+    public createBoostInstance(x: number, y: number, z: number, rotationDeg: number): { floor: InstancedMesh, visual: InstancedMesh } {
+        const s = BlockRegistry.GRID_SIZE;
+        const h = BlockRegistry.HEIGHT_STEP;
+
+        // Create floor instance (same as straight)
+        const floor = this.createInstance("straight", x, y, z, rotationDeg);
+
+        // Create visual boost pad
+        const visualBase = this.baseMeshes["boostVisual"];
+        const visual = visualBase.createInstance(`boost_vis_${x}_${y}_${z}`);
+        visual.position = new Vector3(
+            x * s,
+            y * h + 0.15, // Slightly above road surface
+            z * s
+        );
+        visual.rotation.y = rotationDeg * (Math.PI / 180);
+        visual.isVisible = true;
+
+        return { floor, visual };
     }
 
     public createCheckpointVolume(x: number, y: number, z: number, rotationDeg: number): Mesh {

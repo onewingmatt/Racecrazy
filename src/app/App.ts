@@ -37,6 +37,9 @@ export class App {
     private ghostBuffer: PlayerFrameSnapshot[] = [];
     private isGhostEnabled: boolean = true;
 
+    // Boost pad cooldown: track last frame each pad was triggered to prevent double-hits
+    private boostPadCooldownMs: number[] = [];
+
     constructor() {
         this.renderer = new Renderer();
         this.physics = new PhysicsEngine(this.renderer.scene);
@@ -147,6 +150,11 @@ export class App {
         this.ghostBuffer = []; // Clear recorded ghost frames on restart
         this.ghostManager.resetPlayback();
 
+        // Reset boost pad cooldowns
+        if (this.parsedTrack) {
+            this.boostPadCooldownMs = new Array(this.parsedTrack.boostPads.length).fill(-99999);
+        }
+
         if (this.raceManager.bestTime) {
             this.ui.updateBestTime(this.raceManager.formatTime(this.raceManager.bestTime));
         } else {
@@ -243,6 +251,9 @@ export class App {
         // Fallback simple manual trigger check (since Havok trigger events can be flaky)
         this.checkManualTriggers();
 
+        // Check boost pads
+        this.checkBoostPads();
+
         // Record ghost snapshot if racing
         if (this.raceManager.state !== RaceState.FINISHED) {
             this.ghostBuffer.push(this.createSnapshot(this.raceManager.raceTime));
@@ -284,6 +295,50 @@ export class App {
         return dist < 12; // Adjusted for 14x14 block size radius
     }
 
+    private checkBoostPads(): void {
+        if (!this.parsedTrack || this.raceManager.state === RaceState.FINISHED) return;
+
+        const carPos = this.car.mesh.getAbsolutePosition();
+        const pads = this.parsedTrack.boostPads;
+        const triggerRadius = BlockRegistry.GRID_SIZE * 0.5; // ~7m
+        const cooldownTime = 2000; // 2 seconds cooldown per pad
+
+        for (let i = 0; i < pads.length; i++) {
+            const pad = pads[i];
+            const dist = Vector3.Distance(carPos, pad.position);
+
+            if (dist < triggerRadius && (this.raceManager.raceTime - this.boostPadCooldownMs[i]) > cooldownTime) {
+                this.car.applyBoost(pad.forwardVec);
+                this.boostPadCooldownMs[i] = this.raceManager.raceTime;
+                this.ui.showMessage("BOOST!");
+            }
+        }
+    }
+
+    private _boostPhase = 0;
+
+    private animateBoostPads(alpha: number): void {
+        if (!this.parsedTrack) return;
+        this._boostPhase += alpha * 0.016 * 4; // ~4Hz pulse
+        const pulse = 0.6 + 0.4 * Math.sin(this._boostPhase); // 0.6 to 1.0
+        const scalePulse = 0.9 + 0.1 * Math.sin(this._boostPhase);
+
+        for (const _pad of this.parsedTrack.boostPads) {
+            void _pad; // Ensure we only animate if boost pads exist
+            this.renderer.scene.meshes.forEach((mesh) => {
+                if (mesh.name.startsWith("boost_vis_")) {
+                    if (mesh.material && "emissiveColor" in mesh.material) {
+                        const mat = mesh.material as any;
+                        if (mat.emissiveColor) {
+                            mat.emissiveColor.set(0.8 * pulse, 0.4 * pulse, 0.0);
+                        }
+                    }
+                    mesh.scaling.set(scalePulse, scalePulse, scalePulse);
+                }
+            });
+        }
+    }
+
     private renderUpdate(_alpha: number): void {
         if (this.menuUI.isVisible() && !this.parsedTrack) return;
 
@@ -299,6 +354,9 @@ export class App {
                 this.ghostCar.updateInterpolated(playback.frameA.car, playback.frameB.car, playback.alpha);
             }
         }
+
+        // Pulse boost pad visuals
+        this.animateBoostPads(_alpha);
 
         // Update UI
         this.ui.updateSpeed(this.car.getSpeedKmh());

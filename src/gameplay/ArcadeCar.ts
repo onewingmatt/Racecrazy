@@ -331,4 +331,23 @@ export class ArcadeCar {
 
         this.body.disablePreStep = false;
     }
+
+    /**
+     * Applies a sudden forward impulse to simulate a boost pad hit.
+     * Adds to current velocity rather than replacing it, so existing speed compounds.
+     * @param forwardDir The forward direction of the boost pad
+     * @param boostSpeedMs The additional speed to add in m/s (default ~30 m/s = 108 km/h)
+     */
+    public applyBoost(forwardDir: Vector3, boostSpeedMs: number = 30): void {
+        this.body.getLinearVelocityToRef(this._vel);
+        const currentSpeed = this._vel.length();
+        const maxSpeedMs = this.config.maxSpeedKmh / 3.6;
+        const targetSpeed = Math.min(currentSpeed + boostSpeedMs, maxSpeedMs * 1.15); // allow slight over-max on boost
+
+        // Blend towards the target velocity along the boost pad direction
+        const newSpeed = Math.min(targetSpeed, maxSpeedMs * 1.15);
+        forwardDir.normalize().scaleToRef(newSpeed, this._tempVec1);
+
+        this.body.setLinearVelocity(this._tempVec1);
+    }
 }
