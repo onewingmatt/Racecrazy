@@ -1,30 +1,34 @@
 {
   "id": "track_9_spiral",
   "name": "Downward Spiral",
+  "metadata": {
+    "archetype": "spiral",
+    "intendedLesson": "Maintain momentum through linked turns while adapting to steady elevation change.",
+    "difficultyTier": "intermediate"
+  },
   "medals": {
-    "author": 28000,
-    "gold": 32000,
-    "silver": 37000,
-    "bronze": 45000
+    "author": 20000,
+    "gold": 23000,
+    "silver": 27000,
+    "bronze": 33000
   },
   "blocks": [
     { "type": "start", "x": 0, "y": 2, "z": 0, "rot": 0 },
     { "type": "straight", "x": 0, "y": 2, "z": 1, "rot": 0 },
-    { "type": "turn", "x": 0, "y": 2, "z": 2, "rot": 0 },
+    { "type": "banked_turn", "x": 0, "y": 2, "z": 2, "rot": 0 },
     { "type": "straight", "x": 1, "y": 2, "z": 2, "rot": 90 },
-    { "type": "ramp", "x": 2, "y": 1, "z": 2, "rot": 270 },
-    { "type": "turn", "x": 3, "y": 1, "z": 2, "rot": 90 },
-    { "type": "checkpoint", "x": 3, "y": 1, "z": 1, "rot": 180 },
-    { "type": "turn", "x": 3, "y": 1, "z": 0, "rot": 180 },
-    { "type": "straight", "x": 2, "y": 1, "z": 0, "rot": 270 },
+    { "type": "checkpoint", "x": 2, "y": 2, "z": 2, "rot": 90 },
+    { "type": "ramp", "x": 3, "y": 1, "z": 2, "rot": 90 },
+    { "type": "banked_turn", "x": 4, "y": 1, "z": 2, "rot": 90 },
+    { "type": "straight", "x": 4, "y": 1, "z": 1, "rot": 180 },
+    { "type": "turn", "x": 4, "y": 1, "z": 0, "rot": 180 },
+    { "type": "straight", "x": 3, "y": 1, "z": 0, "rot": 270 },
+    { "type": "checkpoint", "x": 2, "y": 1, "z": 0, "rot": 270 },
     { "type": "ramp", "x": 1, "y": 0, "z": 0, "rot": 90 },
-    { "type": "turn", "x": 0, "y": 0, "z": 0, "rot": 270 },
-    { "type": "checkpoint", "x": 0, "y": 0, "z": -1, "rot": 180 },
-    { "type": "straight", "x": 0, "y": 0, "z": -2, "rot": 180 },
-    { "type": "turn", "x": 0, "y": 0, "z": -3, "rot": 180 },
-    { "type": "straight", "x": -1, "y": 0, "z": -3, "rot": 270 },
-    { "type": "turn", "x": -2, "y": 0, "z": -3, "rot": 270 },
-    { "type": "straight", "x": -2, "y": 0, "z": -2, "rot": 0 },
-    { "type": "finish", "x": -2, "y": 0, "z": -1, "rot": 0 }
+    { "type": "banked_turn", "x": 0, "y": 0, "z": 0, "rot": 270 },
+    { "type": "straight", "x": 0, "y": 0, "z": -1, "rot": 180 },
+    { "type": "turn", "x": 0, "y": 0, "z": -2, "rot": 180 },
+    { "type": "straight", "x": -1, "y": 0, "z": -2, "rot": 270 },
+    { "type": "finish", "x": -2, "y": 0, "z": -2, "rot": 270 }
   ]
 }

@@ -1,4 +1,4 @@
-import { MeshBuilder, StandardMaterial, Color3, Scene, Vector3, Mesh, InstancedMesh, TransformNode } from "@babylonjs/core";
+import { MeshBuilder, StandardMaterial, Color3, Scene, Vector3, Mesh, InstancedMesh } from "@babylonjs/core";
 import { PhysicsAggregate, PhysicsShapeType } from "@babylonjs/core/Physics/v2";
 
 export class BlockRegistry {
@@ -7,7 +7,6 @@ export class BlockRegistry {
 
     private readonly materials: { [key: string]: StandardMaterial } = {};
     private readonly baseMeshes: { [key: string]: Mesh } = {};
-    private readonly wallMeshes: { [key: string]: Mesh } = {};
 
     constructor(private scene: Scene) {
         this.initializeMaterials();
@@ -48,182 +47,302 @@ export class BlockRegistry {
         this.materials["boost"] = boostMat;
     }
 
+    private createExtrudedBlock(name: string, path: Vector3[], roadMat: StandardMaterial): Mesh {
+        const hw = (BlockRegistry.GRID_SIZE - 2) / 2;
+        const curbW = 0.6;
+        const railH = 1.0;
+        
+        const roadShape = [new Vector3(-hw, 0.1, 0), new Vector3(hw, 0.1, 0)];
+        const leftWallShape = [
+            new Vector3(-hw, 0.1, 0),
+            new Vector3(-hw - curbW, 0.1, 0),
+            new Vector3(-hw - curbW, railH, 0),
+            new Vector3(-hw - curbW - 0.2, railH, 0),
+            new Vector3(-hw - curbW - 0.2, 0, 0)
+        ];
+        const rightWallShape = [
+            new Vector3(hw, 0.1, 0),
+            new Vector3(hw + curbW, 0.1, 0),
+            new Vector3(hw + curbW, railH, 0),
+            new Vector3(hw + curbW + 0.2, railH, 0),
+            new Vector3(hw + curbW + 0.2, 0, 0)
+        ];
+
+        const road = MeshBuilder.ExtrudeShape(name + "_road", { shape: roadShape, path: path, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        road.material = roadMat;
+        
+        const leftWall = MeshBuilder.ExtrudeShape(name + "_lwall", { shape: leftWallShape, path: path, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        leftWall.material = this.materials["border"];
+
+        const rightWall = MeshBuilder.ExtrudeShape(name + "_rwall", { shape: rightWallShape, path: path, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        rightWall.material = this.materials["border"];
+
+        const merged = Mesh.MergeMeshes([road, leftWall, rightWall], true, true, undefined, true, true);
+        if (merged) merged.isVisible = false;
+        return merged as Mesh;
+    }
+
+    /**
+     * Creates a quarter-pipe block: flat on one side, arcs up to wall on the other.
+     * Uses a gentle cosine ramp instead of a full quarter-circle to keep the
+     * curve height manageable and compatible with twist-block transitions.
+     */
+    private createQuarterPipe(name: string, roadMat: StandardMaterial, curveRight: boolean): Mesh {
+        const s = BlockRegistry.GRID_SIZE;
+        const hw = (s - 2) / 2;  // road half-width (matches extruded blocks)
+        const profileSteps = 10;
+        const pathSteps = 8;
+        const wallH = 2.5;  // gentle wall height
+
+        const buildProfile = (zOffset: number): Vector3[] => {
+            const profile: Vector3[] = [];
+            if (curveRight) {
+                // Flat left half
+                const flatSteps = 5;
+                for (let i = 0; i <= flatSteps; i++) {
+                    const t = i / flatSteps;
+                    profile.push(new Vector3(-hw + hw * 2 * t, 0, zOffset));
+                }
+                // Curved right half
+                for (let i = 1; i <= profileSteps; i++) {
+                    const t = i / profileSteps;
+                    const angle = (Math.PI / 2) * t;
+                    const x = hw + hw * Math.sin(angle);
+                    const y = wallH * (1 - Math.cos(angle));
+                    profile.push(new Vector3(x, y, zOffset));
+                }
+            } else {
+                // Curved left half
+                for (let i = profileSteps; i >= 0; i--) {
+                    const t = i / profileSteps;
+                    const angle = (Math.PI / 2) * t;
+                    const x = -(hw + hw * Math.sin(angle));
+                    const y = wallH * (1 - Math.cos(angle));
+                    profile.push(new Vector3(x, y, zOffset));
+                }
+                // Flat right half
+                const flatSteps = 5;
+                for (let i = 1; i <= flatSteps; i++) {
+                    const t = i / flatSteps;
+                    profile.push(new Vector3(-hw + hw * 2 * t, 0, zOffset));
+                }
+            }
+            return profile;
+        };
+
+        const pathArray: Vector3[][] = [];
+        for (let i = 0; i <= pathSteps; i++) {
+            const z = -hw + hw * 2 * (i / pathSteps);
+            pathArray.push(buildProfile(z));
+        }
+
+        const mesh = MeshBuilder.CreateRibbon(name, {
+            pathArray: pathArray,
+            sideOrientation: Mesh.DOUBLESIDE,
+            updatable: false
+        }, this.scene);
+        mesh.material = roadMat;
+        mesh.isVisible = false;
+        return mesh;
+    }
+
+    /**
+     * Creates a half-pipe block with walls on BOTH sides.
+     * The surface is flat in the center and arcs up to vertical walls on both edges.
+     */
+    private createHalfPipe(name: string, roadMat: StandardMaterial): Mesh {
+        const s = BlockRegistry.GRID_SIZE;
+        const hw = s / 2;
+        const curveRadius = hw * 0.6;
+        const flatWidth = hw - curveRadius;
+        const profileSteps = 8;
+        const pathSteps = 8;
+
+        const buildProfile = (zOffset: number): Vector3[] => {
+            const profile: Vector3[] = [];
+
+            // Left wall curve (from edge to flat section)
+            const leftCenter = -flatWidth;
+            for (let i = 0; i <= profileSteps; i++) {
+                const t = i / profileSteps;
+                const angle = Math.PI + t * (Math.PI / 2);
+                const x = leftCenter + curveRadius * Math.cos(angle);
+                const y = curveRadius * Math.sin(angle);
+                profile.push(new Vector3(x, y, zOffset));
+            }
+
+            // Flat section in the middle
+            profile.push(new Vector3(flatWidth, 0, zOffset));
+
+            // Right wall curve (from flat section to edge)
+            const rightCenter = flatWidth;
+            for (let i = 0; i <= profileSteps; i++) {
+                const t = i / profileSteps;
+                const angle = Math.PI - t * (Math.PI / 2);
+                const x = rightCenter + curveRadius * Math.cos(angle);
+                const y = curveRadius * Math.sin(angle);
+                profile.push(new Vector3(x, y, zOffset));
+            }
+
+            return profile;
+        };
+
+        const pathArray: Vector3[][] = [];
+        for (let i = 0; i <= pathSteps; i++) {
+            const z = -hw + s * (i / pathSteps);
+            pathArray.push(buildProfile(z));
+        }
+
+        const mesh = MeshBuilder.CreateRibbon(name, {
+            pathArray: pathArray,
+            sideOrientation: Mesh.DOUBLESIDE,
+            updatable: false
+        }, this.scene);
+
+        mesh.material = roadMat;
+        mesh.isVisible = false;
+        return mesh;
+    }
+
+    private createExtrudedCustomBlock(name: string, path: Vector3[], roadMat: StandardMaterial, rotationFunc: (i: number, distance: number) => number): Mesh {
+        const hw = (BlockRegistry.GRID_SIZE - 2) / 2;
+        const curbW = 0.6;
+        const railH = 1.0;
+        
+        const roadShape = [new Vector3(-hw, 0.1, 0), new Vector3(hw, 0.1, 0)];
+        const leftWallShape = [
+            new Vector3(-hw, 0.1, 0),
+            new Vector3(-hw - curbW, 0.1, 0),
+            new Vector3(-hw - curbW, railH, 0),
+            new Vector3(-hw - curbW - 0.2, railH, 0),
+            new Vector3(-hw - curbW - 0.2, 0, 0)
+        ];
+        const rightWallShape = [
+            new Vector3(hw, 0.1, 0),
+            new Vector3(hw + curbW, 0.1, 0),
+            new Vector3(hw + curbW, railH, 0),
+            new Vector3(hw + curbW + 0.2, railH, 0),
+            new Vector3(hw + curbW + 0.2, 0, 0)
+        ];
+
+        const road = MeshBuilder.ExtrudeShapeCustom(name + "_road", { shape: roadShape, path: path, rotationFunction: rotationFunc, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        road.material = roadMat;
+        
+        const leftWall = MeshBuilder.ExtrudeShapeCustom(name + "_lwall", { shape: leftWallShape, path: path, rotationFunction: rotationFunc, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        leftWall.material = this.materials["border"];
+
+        const rightWall = MeshBuilder.ExtrudeShapeCustom(name + "_rwall", { shape: rightWallShape, path: path, rotationFunction: rotationFunc, sideOrientation: Mesh.DOUBLESIDE, updatable: false }, this.scene);
+        rightWall.material = this.materials["border"];
+
+        const merged = Mesh.MergeMeshes([road, leftWall, rightWall], true, true, undefined, true, true);
+        if (merged) merged.isVisible = false;
+        return merged as Mesh;
+    }
+
     public initializeBaseMeshes(): void {
         const s = BlockRegistry.GRID_SIZE;
         const h = BlockRegistry.HEIGHT_STEP;
-        const floorThickness = 0.1; // Thinner floor to minimize gaps at ramp hinges
 
-        // --- Core Track Blocks ---
+        const pathStraight = [new Vector3(0, 0, -s/2), new Vector3(0, 0, s/2)];
+        this.baseMeshes["straight"] = this.createExtrudedBlock("base_straight", pathStraight, this.materials["road"]);
+        this.baseMeshes["start"] = this.createExtrudedBlock("base_start", pathStraight, this.materials["start"]);
+        this.baseMeshes["finish"] = this.createExtrudedBlock("base_finish", pathStraight, this.materials["finish"]);
 
-        const straight = MeshBuilder.CreateBox("base_straight", { width: s, depth: s, height: floorThickness }, this.scene);
-        straight.position.y = floorThickness / 2; // Bottom sits exactly at Y=0
-        straight.bakeCurrentTransformIntoVertices();
-        straight.material = this.materials["road"];
-        straight.isVisible = false;
-        this.baseMeshes["straight"] = straight;
-
-        const start = MeshBuilder.CreateBox("base_start", { width: s, depth: s, height: floorThickness }, this.scene);
-        start.position.y = floorThickness / 2;
-        start.bakeCurrentTransformIntoVertices();
-        start.material = this.materials["start"];
-        start.isVisible = false;
-        this.baseMeshes["start"] = start;
-
-        const finish = MeshBuilder.CreateBox("base_finish", { width: s, depth: s, height: floorThickness }, this.scene);
-        finish.position.y = floorThickness / 2;
-        finish.bakeCurrentTransformIntoVertices();
-        finish.material = this.materials["finish"];
-        finish.isVisible = false;
-        this.baseMeshes["finish"] = finish;
-
-        // Create a rounded 90-degree curve using Ribbon
-        const path1: Vector3[] = [];
-        const path2: Vector3[] = [];
-        const innerR = 0;
-        const outerR = s;
+        const pathTurn: Vector3[] = [];
         for(let i=0; i<=24; i++) {
-            // Exactly PI down to PI/2 to ensure flush seams without overlapping/colliding into adjacent flat blocks
             const angle = Math.PI - (i / 24) * (Math.PI / 2);
-            const px1 = s/2 + innerR * Math.cos(angle);
-            const pz1 = -s/2 + innerR * Math.sin(angle);
-            const px2 = s/2 + outerR * Math.cos(angle);
-            const pz2 = -s/2 + outerR * Math.sin(angle);
-            path1.push(new Vector3(px1, floorThickness, pz1));
-            path2.push(new Vector3(px2, floorThickness, pz2));
+            const px = s/2 + (s/2) * Math.cos(angle);
+            const pz = -s/2 + (s/2) * Math.sin(angle);
+            pathTurn.push(new Vector3(px, 0, pz));
         }
-        const turn = MeshBuilder.CreateRibbon("base_turn", { pathArray: [path1, path2], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
-        turn.bakeCurrentTransformIntoVertices();
-        turn.material = this.materials["road"];
-        turn.isVisible = false;
-        this.baseMeshes["turn"] = turn;
+        this.baseMeshes["turn"] = this.createExtrudedBlock("base_turn", pathTurn, this.materials["road"]);
 
-        // Ramp (Slope)
-        // Perfectly hinge at (0,0,-s/2) and slope up to (0,h,s/2).
-        const angle = Math.atan2(h, s);
-        // We build a solid enclosed volume using Ribbon with 4 paths wrapping around the slope.
-        // This ensures the ramp has physical depth (`floorThickness`) which is required for reliable
-        // `InstancedMesh` and `PhysicsShapeType.MESH` generation without silent invisible failures.
-        const rampBottomFront = [new Vector3(-s/2, 0, -s/2), new Vector3(s/2, 0, -s/2)];
-        const rampTopFront = [new Vector3(-s/2, floorThickness, -s/2), new Vector3(s/2, floorThickness, -s/2)];
-        const rampTopBack = [new Vector3(-s/2, h + floorThickness, s/2), new Vector3(s/2, h + floorThickness, s/2)];
-        const rampBottomBack = [new Vector3(-s/2, h, s/2), new Vector3(s/2, h, s/2)];
+        const pathRamp = [new Vector3(0, 0, -s/2), new Vector3(0, h, s/2)];
+        this.baseMeshes["ramp"] = this.createExtrudedBlock("base_ramp", pathRamp, this.materials["road"]);
 
-        // `closePath: true` wraps the final path back to the first path, closing the bottom floor
-        const simpleRamp = MeshBuilder.CreateRibbon("base_ramp", {
-            pathArray: [rampBottomFront, rampTopFront, rampTopBack, rampBottomBack],
-            closePath: true,
-            sideOrientation: Mesh.DOUBLESIDE
+        this.baseMeshes["checkpoint"] = this.createExtrudedBlock("base_checkpoint", pathStraight, this.materials["road"]);
+
+        // --- Loop de loop ---
+        // Built as a full torus-like tube: a circle in the YZ plane,
+        // extended across the road width (X axis). The circle center sits
+        // at (0, loopR, 0) so the bottom touches y=0 where the flat road
+        // approaches from z<0 and exits toward z>0.
+        const loopR = 7;       // radius = grid half-size, fills cell exactly
+        const loopSegs = 64;   // segments around the circle
+        const widthSegs = 8;   // segments across road width
+        const hw = (BlockRegistry.GRID_SIZE - 2) / 2;  // road half-width = 6
+
+        const tubePath: Vector3[] = [];
+        for (let i = 0; i <= loopSegs; i++) {
+            const phi = (i / loopSegs) * 2 * Math.PI;
+            const py = loopR - loopR * Math.cos(phi);
+            const pz = loopR * Math.sin(phi);
+            tubePath.push(new Vector3(0, py, pz));
+        }
+
+        const loopTube = MeshBuilder.CreateTube("base_loop", {
+            path: tubePath,
+            radius: hw,
+            tessellation: widthSegs + 1,
+            sideOrientation: Mesh.DOUBLESIDE,
+            cap: Mesh.NO_CAP
         }, this.scene);
 
-        simpleRamp.bakeCurrentTransformIntoVertices();
-        simpleRamp.material = this.materials["road"];
-        simpleRamp.isVisible = false;
+        // Rotate so the tube's axis runs along X (road width), not along Z
+        loopTube.rotate(new Vector3(1, 0, 0), Math.PI / 2);
+        loopTube.bakeCurrentTransformIntoVertices();
 
-        this.baseMeshes["ramp"] = simpleRamp;
+        loopTube.material = this.materials["road"];
+        loopTube.isVisible = false;
+        this.baseMeshes["loop"] = loopTube;
 
-        const checkpoint = MeshBuilder.CreateBox("base_checkpoint", { width: s, depth: s, height: floorThickness }, this.scene);
-        checkpoint.position.y = floorThickness / 2;
-        checkpoint.bakeCurrentTransformIntoVertices();
-        checkpoint.material = this.materials["road"];
-        checkpoint.isVisible = false;
-        this.baseMeshes["checkpoint"] = checkpoint;
+        // --- Banked Turn ---
+        const bankedRotFunc = (i: number) => {
+            const rotMax = -Math.PI / 4; // 45 degrees, tilts outside edge UP
+            return rotMax * Math.sin((i / 24) * Math.PI);
+        };
+        this.baseMeshes["banked_turn"] = this.createExtrudedCustomBlock("base_banked_turn", pathTurn, this.materials["road"], bankedRotFunc);
 
-        // --- Walls & Borders (Spawned conditionally on exposed edges) ---
-        // A wall sits ON the edge of a block.
-        // If a block is at (0,0,0) with size 10x10, its "Right" edge is at X = 5.
-        // We build the generic wall mesh to be centered at (0,0,0) and we'll translate it when spawning.
-        const wallThickness = 0.6;  // Thicker barrier to prevent high-speed snagging at exact boundary
-        const wallHeight = 1.0;
+        // --- Twists for Wallrides ---
+        const pathTwist: Vector3[] = [];
+        const twistSteps = 10;
+        for (let i = 0; i <= twistSteps; i++) {
+            pathTwist.push(new Vector3(0, 0, -s/2 + s * (i / twistSteps)));
+        }
 
-        // Flat Wall
-        const flatWallRail = MeshBuilder.CreateBox("wall_rail", { width: wallThickness, depth: s + 0.12, height: wallHeight }, this.scene);
-        flatWallRail.position.y = wallHeight / 2;
-        flatWallRail.material = this.materials["border"];
+        const entryTwistLFunc = (i: number) => -(Math.PI / 2) * (i / twistSteps);
+        this.baseMeshes["entry_twist_l"] = this.createExtrudedCustomBlock("base_entry_twist_l", pathTwist, this.materials["road"], entryTwistLFunc);
 
-        // Dark corner posts to hide seams
-        const postZ1 = MeshBuilder.CreateBox("post1", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight + 0.05 }, this.scene);
-        postZ1.position.y = (wallHeight + 0.05) / 2;
-        postZ1.position.z = s / 2;
-        postZ1.material = this.materials["trim"];
+        const entryTwistRFunc = (i: number) => (Math.PI / 2) * (i / twistSteps);
+        this.baseMeshes["entry_twist_r"] = this.createExtrudedCustomBlock("base_entry_twist_r", pathTwist, this.materials["road"], entryTwistRFunc);
 
-        const postZ2 = MeshBuilder.CreateBox("post2", { width: wallThickness * 0.8, depth: wallThickness * 0.8, height: wallHeight + 0.05 }, this.scene);
-        postZ2.position.y = (wallHeight + 0.05) / 2;
-        postZ2.position.z = -s / 2;
-        postZ2.material = this.materials["trim"];
+        const exitTwistLFunc = (i: number) => -(Math.PI / 2) * (1.0 - (i / twistSteps));
+        this.baseMeshes["exit_twist_l"] = this.createExtrudedCustomBlock("base_exit_twist_l", pathTwist, this.materials["road"], exitTwistLFunc);
 
-        const flatWall = Mesh.MergeMeshes([flatWallRail, postZ1, postZ2], true, true, undefined, false, true)!;
-        flatWall.name = "wall_flat";
-        flatWall.isVisible = false;
-        this.wallMeshes["flat"] = flatWall;
+        const exitTwistRFunc = (i: number) => (Math.PI / 2) * (1.0 - (i / twistSteps));
+        this.baseMeshes["exit_twist_r"] = this.createExtrudedCustomBlock("base_exit_twist_r", pathTwist, this.materials["road"], exitTwistRFunc);
 
-        // Sloped Wall for Ramps
-        const rampDepth = Math.sqrt(s*s + h*h);
-        const slopedWallRail = MeshBuilder.CreateBox("wall_rail_ramp", { width: wallThickness, depth: rampDepth + 0.08, height: wallHeight }, this.scene);
-        slopedWallRail.position.y = wallHeight / 2;
-        slopedWallRail.material = this.materials["border"];
+        // --- Quarter-Pipe Wall Ride Blocks ---
+        // Curved surface: flat on one side, arcs up to a vertical wall on the other
+        this.baseMeshes["quarter_pipe_l"] = this.createQuarterPipe("base_quarter_pipe_l", this.materials["road"], false);
+        this.baseMeshes["quarter_pipe_r"] = this.createQuarterPipe("base_quarter_pipe_r", this.materials["road"], true);
 
-        const slopedWall = Mesh.MergeMeshes([slopedWallRail], true, true, undefined, false, true)!;
-        slopedWall.rotation.x = -angle;
-        slopedWall.position.y = h / 2 + floorThickness; // Adjust for the new Ribbon ramp height
-        slopedWall.bakeCurrentTransformIntoVertices();
+        // --- Half-Pipe Block (walls on BOTH sides) ---
+        // Full U-shape: both edges curve up to vertical walls
+        this.baseMeshes["half_pipe"] = this.createHalfPipe("base_half_pipe", this.materials["road"]);
 
-        slopedWall.name = "wall_ramp";
-        slopedWall.isVisible = false;
-        this.wallMeshes["ramp"] = slopedWall;
+        // Keep old names for backward compatibility with existing track data
+        this.baseMeshes["half_pipe_l"] = this.baseMeshes["quarter_pipe_l"];
+        this.baseMeshes["half_pipe_r"] = this.baseMeshes["quarter_pipe_r"];
 
         // --- Boost Pad ---
-        // Flat pad with a raised center arrow shape. Sits on top of a straight block.
-        const boostPadBase = MeshBuilder.CreateBox("base_boostBase", { width: s, depth: s, height: floorThickness }, this.scene);
-        boostPadBase.position.y = floorThickness / 2;
-        boostPadBase.bakeCurrentTransformIntoVertices();
-        boostPadBase.material = this.materials["road"];
-        boostPadBase.isVisible = false;
-        this.baseMeshes["boost"] = boostPadBase;  // Boost pad uses the same base as straight
-
-        // Boost pad visual marker - an orange glowing pad
-        const padWidth = s * 0.6;
-        const padDepth = s * 0.3;
-        const boostPadVisual = MeshBuilder.CreateBox("base_boostVisual", { width: padWidth, depth: padDepth, height: 0.15 }, this.scene);
-        boostPadVisual.position.y = floorThickness + 0.075;
+        const boostPadVisual = MeshBuilder.CreateBox("base_boostVisual", { width: s * 0.6, depth: s * 0.3, height: 0.15 }, this.scene);
+        boostPadVisual.position.y = 0.2;
         boostPadVisual.bakeCurrentTransformIntoVertices();
         boostPadVisual.material = this.materials["boost"];
         boostPadVisual.isVisible = false;
         this.baseMeshes["boostVisual"] = boostPadVisual;
-
-        // Curved Walls for Turns
-        const innerWallPathBottom: Vector3[] = [];
-        const innerWallPathTop: Vector3[] = [];
-        const outerWallPathBottom: Vector3[] = [];
-        const outerWallPathTop: Vector3[] = [];
-        for(let i=0; i<=24; i++) {
-            const angle = Math.PI - (i / 24) * (Math.PI / 2);
-
-            // Inner wall (radius 0)
-            const ir = innerR;
-            const px_in = s/2 + ir * Math.cos(angle);
-            const pz_in = -s/2 + ir * Math.sin(angle);
-            innerWallPathBottom.push(new Vector3(px_in, 0, pz_in));
-            innerWallPathTop.push(new Vector3(px_in, wallHeight, pz_in));
-
-            // Outer wall (radius s)
-            const or = outerR;
-            const px_out = s/2 + or * Math.cos(angle);
-            const pz_out = -s/2 + or * Math.sin(angle);
-            outerWallPathBottom.push(new Vector3(px_out, 0, pz_out));
-            outerWallPathTop.push(new Vector3(px_out, wallHeight, pz_out));
-        }
-
-        const innerWallTurn = MeshBuilder.CreateRibbon("wall_turn_inner", { pathArray: [innerWallPathBottom, innerWallPathTop], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
-        innerWallTurn.material = this.materials["border"];
-        innerWallTurn.bakeCurrentTransformIntoVertices();
-        innerWallTurn.isVisible = false;
-        this.wallMeshes["turn_inner"] = innerWallTurn;
-
-        const outerWallTurn = MeshBuilder.CreateRibbon("wall_turn_outer", { pathArray: [outerWallPathBottom, outerWallPathTop], sideOrientation: Mesh.DOUBLESIDE }, this.scene);
-        outerWallTurn.material = this.materials["border"];
-        outerWallTurn.bakeCurrentTransformIntoVertices();
-        outerWallTurn.isVisible = false;
-        this.wallMeshes["turn_outer"] = outerWallTurn;
+        this.baseMeshes["boost"] = this.baseMeshes["straight"];
     }
 
     public createInstance(type: string, x: number, y: number, z: number, rotationDeg: number): InstancedMesh {
@@ -243,88 +362,15 @@ export class BlockRegistry {
 
         instance.rotation.y = rotationDeg * (Math.PI / 180);
 
-        const shapeType = (type === "turn" || type === "ramp") ? PhysicsShapeType.MESH : PhysicsShapeType.BOX;
+        const shapeType = PhysicsShapeType.MESH;
         new PhysicsAggregate(instance, shapeType, { mass: 0, restitution: 0.1, friction: 0.8 }, this.scene);
 
         return instance;
     }
 
-    /**
-     * Spawns a wall instance on a specific local edge of a block.
-     * edge: "left", "right", "forward", "backward"
-     */
-    public createWallInstance(x: number, y: number, z: number, blockRotationDeg: number, localEdge: string, blockType: string): InstancedMesh {
-        let wallType = "flat";
-        if (blockType === "ramp" && (localEdge === "left" || localEdge === "right")) {
-            wallType = "ramp";
-        } else if (blockType === "turn") {
-            // Right turn (entrance South, exit East)
-            // Inner curve is on the right side (+X edge), Outer curve covers Left (-X) and Forward (+Z).
-            // "backward" (-Z) is the open entrance.
-            if (localEdge === "right") wallType = "turn_inner";
-            if (localEdge === "left" || localEdge === "forward") wallType = "turn_outer";
-
-            // Outer curve actually covers both 'left' and 'forward' edges inherently.
-            // To prevent creating exact duplicate walls when both edges are requested by TrackParser,
-            // we will only spawn "turn_outer" once (e.g., when 'left' is called).
-            if (localEdge === "forward") return null as any;
-            if (localEdge === "backward") return null as any; // No wall on entrance edge, it's open
-        }
-        const baseWall = this.wallMeshes[wallType];
-        if (!baseWall) return null as any;
-
-        const instance = baseWall.createInstance(`wall_${x}_${y}_${z}_${localEdge}`);
-
-        const s = BlockRegistry.GRID_SIZE;
-        const offset = s / 2;
-
-        // Create a dummy node representing the center of the block
-        const blockNode = new TransformNode("dummy", this.scene);
-        blockNode.position = new Vector3(x * s, y * BlockRegistry.HEIGHT_STEP, z * s);
-        blockNode.rotation.y = blockRotationDeg * (Math.PI / 180);
-
-        // Parent the wall to the block, apply local offset/rotation, then bake to world.
-        instance.parent = blockNode;
-
-        if (blockType === "turn") {
-            // The turn wall meshes are already built perfectly relative to the block center.
-            // But wait, the outer curve covers TWO edges (left and forward). If both are exposed,
-            // spawning "turn_outer" once covers BOTH. If we spawn it twice, we get duplicates.
-            // For now, let's just let it be duplicate exactly on top of each other, or offset correctly.
-            // Let's just snap it to the center.
-            instance.position.set(0, 0, 0);
-            instance.rotation.y = 0;
-        } else {
-            switch (localEdge) {
-                case "right":
-                    instance.position.x = offset;
-                    instance.rotation.y = 0;
-                    break;
-                case "left":
-                    instance.position.x = -offset;
-                    instance.rotation.y = 0;
-                    break;
-                case "forward":
-                    instance.position.z = offset;
-                    instance.rotation.y = Math.PI / 2;
-                    break;
-                case "backward":
-                    instance.position.z = -offset;
-                    instance.rotation.y = Math.PI / 2;
-                    break;
-            }
-        }
-
-        instance.computeWorldMatrix(true);
-
-        // Remove parent and keep absolute position/rotation
-        instance.setParent(null);
-        blockNode.dispose();
-
-        const wallShapeType = (wallType === "ramp" || wallType === "turn_inner" || wallType === "turn_outer") ? PhysicsShapeType.MESH : PhysicsShapeType.BOX;
-        new PhysicsAggregate(instance, wallShapeType, { mass: 0, restitution: 0.0, friction: 0.0 }, this.scene);
-
-        return instance;
+    public createWallInstance(_x: number, _y: number, _z: number, _blockRotationDeg: number, _localEdge: string, _blockType: string): InstancedMesh {
+        // Obsolete: Edge walls are natively generated in the extruded track profiles.
+        return null as any;
     }
 
     /**

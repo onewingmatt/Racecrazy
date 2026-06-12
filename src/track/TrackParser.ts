@@ -1,5 +1,5 @@
 import { BlockRegistry } from "./BlockRegistry";
-import { TrackData, MedalTimes } from "./TrackSchema";
+import { TrackData, MedalTimes, TrackMetadata } from "./TrackSchema";
 import { Mesh, Vector3, InstancedMesh } from "@babylonjs/core";
 
 export interface BoostPadData {
@@ -11,6 +11,7 @@ export interface ParsedTrack {
     id: string;
     name: string;
     medals?: MedalTimes;
+    metadata?: TrackMetadata;
     startPosition: Vector3;
     startRotationDeg: number;
     blocks: InstancedMesh[];
@@ -19,11 +20,7 @@ export interface ParsedTrack {
     boostPads: BoostPadData[];
 }
 
-interface GridCell {
-    type: string;
-    y: number;
-    rot: number;
-}
+
 
 export class TrackParser {
     constructor(private registry: BlockRegistry) {}
@@ -33,6 +30,7 @@ export class TrackParser {
             id: data.id,
             name: data.name,
             medals: data.medals,
+            metadata: data.metadata,
             startPosition: new Vector3(0, 10, 0),
             startRotationDeg: 0,
             blocks: [],
@@ -41,10 +39,6 @@ export class TrackParser {
             boostPads: [],
         };
 
-        const map = new Map<string, GridCell>();
-        for (const b of data.blocks) {
-            map.set(`${b.x},${b.z}`, { type: b.type, y: b.y, rot: b.rot });
-        }
 
         let cpCount = 0;
 
@@ -78,78 +72,9 @@ export class TrackParser {
                 });
             }
 
-            const normRot = ((rot % 360) + 360) % 360;
-            const rIdx = Math.round(normRot / 90) % 4;
-            const isRamp = type === "ramp";
-            const dirMap = this.getDirectionMap(rIdx);
-
-            this.evaluateEdge(x, y, z, rot, "forward", dirMap["forward"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "backward", dirMap["backward"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "left", dirMap["left"], isRamp, map);
-            this.evaluateEdge(x, y, z, rot, "right", dirMap["right"], isRamp, map);
         }
 
         return parsed;
     }
 
-    private getDirectionMap(rIdx: number): { [key: string]: { dx: number, dz: number } } {
-        const dirs = [
-            { dx: 0, dz: 1 },
-            { dx: 1, dz: 0 },
-            { dx: 0, dz: -1 },
-            { dx: -1, dz: 0 }
-        ];
-
-        return {
-            "forward": dirs[rIdx],
-            "right": dirs[(rIdx + 1) % 4],
-            "backward": dirs[(rIdx + 2) % 4],
-            "left": dirs[(rIdx + 3) % 4],
-        };
-    }
-
-    private evaluateEdge(x: number, y: number, z: number, blockRot: number, localEdge: string, worldDir: { dx: number, dz: number }, isRamp: boolean, map: Map<string, GridCell>): void {
-        const nx = x + worldDir.dx;
-        const nz = z + worldDir.dz;
-        const neighbor = map.get(`${nx},${nz}`);
-
-        let isExposed = true;
-        const myType = map.get(`${x},${z}`)?.type || "straight";
-
-        if (myType === "turn" && (localEdge === "forward" || localEdge === "left")) {
-            isExposed = true;
-        } else if (neighbor) {
-            let myEdgeY = y;
-            if (isRamp && localEdge === "forward") myEdgeY = y + 1;
-
-            let neighborEdgeY = neighbor.y;
-            const neighborIsRamp = neighbor.type === "ramp";
-            const nNormRot = ((neighbor.rot % 360) + 360) % 360;
-            const nIdx = Math.round(nNormRot / 90) % 4;
-            const nDirs = this.getDirectionMap(nIdx);
-
-            let nLocalEdgeTouchingMe = "";
-            if (nDirs["forward"].dx === -worldDir.dx && nDirs["forward"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "forward";
-            else if (nDirs["backward"].dx === -worldDir.dx && nDirs["backward"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "backward";
-            else if (nDirs["left"].dx === -worldDir.dx && nDirs["left"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "left";
-            else if (nDirs["right"].dx === -worldDir.dx && nDirs["right"].dz === -worldDir.dz) nLocalEdgeTouchingMe = "right";
-
-            let hitClosedNeighborTurn = false;
-            if (neighbor.type === "turn" && (nLocalEdgeTouchingMe === "forward" || nLocalEdgeTouchingMe === "left")) {
-                hitClosedNeighborTurn = true;
-            } else if (neighborIsRamp) {
-                if (nLocalEdgeTouchingMe === "forward") {
-                    neighborEdgeY = neighbor.y + 1;
-                }
-            }
-
-            if (myEdgeY === neighborEdgeY && !hitClosedNeighborTurn) {
-                isExposed = false;
-            }
-        }
-
-        if (isExposed) {
-            this.registry.createWallInstance(x, y, z, blockRot, localEdge, myType);
-        }
-    }
 }

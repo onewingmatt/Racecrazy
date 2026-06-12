@@ -41,12 +41,16 @@ The codebase is organized into modular domains:
 
 ## Roadmap (Next Steps)
 
-1.  **Ghost Recording/Replay**: Serialize car transforms at fixed intervals and replay them using the fixed-timestep architecture.
-2.  **Medals**: Add Author, Gold, Silver, and Bronze time targets to the track JSON and display them in UI.
-3.  **Local & Remote Leaderboards**: Integrate a lightweight backend to store best times globally.
-4.  **In-Browser Track Editor**: Create a UI to place blocks visually and export the JSON.
-5.  **Multiplayer Ghost Sync**: Send compressed input or state snapshots to a relay server to see other players in real-time.
+The current design backlog is tracked in [plan.md](plan.md).
+
+Top priorities:
+
+1.  Rework the signature tracks so they feel like authored Trackmania Nations routes rather than test layouts.
+2.  Rebalance medal targets after the route shapes are finalized.
+3.  Add lightweight track metadata to support archetypes, intended lessons, and difficulty tiers.
+4.  Build ghosts, track editing, and leaderboards after the track identity is solid.
 ## Developer Notes
 
 **Track Selection:**
-Currently, the track layout is hardcoded to load from `src/data/track.json`. To test the newly added "The Long Run" track (which features multiple checkpoints, ramps, and turns), simply run the game using `npm run dev`. To build additional tracks, replace or modify the `blocks` array in `track.json` following the established 10x10m grid schema.
+Tracks are loaded from `src/data/TrackList.ts` and the JSON files in `src/data/tracks/`.
+To add or adjust a course, edit the relevant track JSON and then update `TrackList.ts` if you add a new file.

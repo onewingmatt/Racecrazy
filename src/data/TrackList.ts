@@ -9,6 +9,8 @@ import track08 from "./tracks/08_long_jump.json";
 import track09 from "./tracks/09_spiral.json";
 import track10 from "./tracks/10_finale.json";
 import track11 from "./tracks/11_boost.json";
+import track12 from "./tracks/12_loop_de_loop.json";
+import track13 from "./tracks/13_wallride.json";
 import { TrackData } from "../track/TrackSchema";
 
 export const TrackList: TrackData[] = [
@@ -22,5 +24,7 @@ export const TrackList: TrackData[] = [
     track08 as TrackData,
     track09 as TrackData,
     track10 as TrackData,
-    track11 as TrackData
+    track11 as TrackData,
+    track12 as TrackData,
+    track13 as TrackData
 ];

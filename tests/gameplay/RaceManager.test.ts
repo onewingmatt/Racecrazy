@@ -28,12 +28,17 @@ describe("RaceManager", () => {
         expect(raceManager.state).toBe(RaceState.READY);
 
         raceManager.beginRacing();
+        expect(raceManager.state).toBe(RaceState.READY);
+        expect(raceManager.countdownPhase).toBe(3);
+
+        raceManager.updateCountdown(2.6);
         expect(raceManager.state).toBe(RaceState.RACING);
     });
 
     it("should enforce sequential checkpoint progression", () => {
         raceManager.startRace("track1", 3);
         raceManager.beginRacing();
+        raceManager.updateCountdown(2.6);
 
         // Cannot hit CP 1 before CP 0
         expect(raceManager.hitCheckpoint(1)).toBe(false);
@@ -58,9 +63,10 @@ describe("RaceManager", () => {
     it("should prevent hitting finish if not all checkpoints are collected", () => {
         raceManager.startRace("track1", 3); // 3 checkpoints (0, 1, 2)
         raceManager.beginRacing();
+        raceManager.updateCountdown(2.6);
 
         // Hit CP 0
-        raceManager.hitCheckpoint(0);
+        expect(raceManager.hitCheckpoint(0)).toBe(true);
 
         // Try finishing prematurely
         expect(raceManager.hitFinish()).toBe(false);
@@ -70,6 +76,7 @@ describe("RaceManager", () => {
     it("should finish successfully and save best time if all checkpoints are hit", () => {
         raceManager.startRace("track1", 2); // Requires hitting CP 0 and CP 1 before finish
         raceManager.beginRacing();
+        raceManager.updateCountdown(2.6);
 
         let now = 1000;
         vi.spyOn(performance, 'now').mockReturnValue(now);

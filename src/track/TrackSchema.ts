@@ -13,9 +13,16 @@ export interface MedalTimes {
     bronze: number;
 }
 
+export interface TrackMetadata {
+    archetype?: string;
+    intendedLesson?: string;
+    difficultyTier?: string;
+}
+
 export interface TrackData {
     id: string; // Unique identifier for saves
     name: string;
     medals?: MedalTimes;
+    metadata?: TrackMetadata;
     blocks: TrackBlock[];
 }

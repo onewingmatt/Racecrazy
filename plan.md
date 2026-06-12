@@ -1,23 +1,61 @@
-1. **Change the track width (Grid Size) from 10 to 14.**
-   - Modify `src/track/BlockRegistry.ts` to set `public static readonly GRID_SIZE = 14;`.
-   - Modifying this static constant will natively scale up the entire track, making the roads 40% wider and all blocks spaced 40% further apart, because `s` is used for all widths/depths in `BlockRegistry`.
+# Proper Clone Roadmap
 
-2. **Update the turn block to be visually rounded.**
-   - In `src/track/BlockRegistry.ts`, change `base_turn` creation to use `MeshBuilder.CreateRibbon` or a rounded mesh, instead of a simple `CreateBox`.
-   - Implement the path mapping specifically so it properly lines up with the Grid:
-     - Entrance at South (-Z axis): `x` in `[-s/2, s/2]`, `z = -s/2`
-     - Exit at East (+X axis): `x = s/2`, `z` in `[-s/2, s/2]`
-     - Calculate the arc paths.
-   - Adjust `shapeType` logic in `BlockRegistry.ts` -> `createInstance` to handle the turn block physics. Since a ribbon is used, `PhysicsShapeType.CONVEX_HULL` or `MESH` is needed. Wait, a complex mesh is best represented as `PhysicsShapeType.MESH` for accurate physics of curved roads, or we can use CONVEX_HULL if the curve is simple enough. Actually, `MESH` type physics is perfectly accurate for a driving track but sometimes can be tricky if hollow. Let's use `PhysicsShapeType.MESH` for static track instances.
+This project already has the core driving loop, physics, and track-block scaffolding. The gap now is track identity: the courses need to feel authored, readable, and progressively more like classic Trackmania Nations routes.
 
-3. **Tune car steering sensitivity at low speeds.**
-   - In `src/gameplay/ArcadeCar.ts`, update `DEFAULT_CONFIG`.
-   - The user noted: "Turning is still way too sensitive at slow speeds".
-   - Current: `lowSpeedSteerRampKmh: 20` and steering relies on:
-     ```typescript
-     if (currentSpeedKmh < this.config.lowSpeedSteerRampKmh) {
-         steerMultiplier = Math.max(0.01, currentSpeedKmh / this.config.lowSpeedSteerRampKmh);
-     }
-     ```
-   - We will increase `lowSpeedSteerRampKmh` from 20 to 60 or 80. This makes the multiplier stay lower for much longer until the car hits higher speeds.
-   - We'll also change `baseTurnSpeed` from 3.5 down to 3.0 or 2.8 to generally reduce sensitivity without breaking the high speed handling feel.
+## Design Goals
+
+- Each track should teach one main skill.
+- Every special element needs setup, commitment, and recovery.
+- Medal targets should reflect the route, not just the number of blocks.
+- The late-game tracks should feel iconic, not just longer.
+
+## Immediate Priorities
+
+### 1. Finish the signature tracks
+
+- Rework `09_spiral.json` into a real spiral/helix course with a clear vertical rhythm.
+- Keep improving `13_wallride.json` until it has sustained wall sections, not just short curved fragments.
+- Polish `10_finale.json` so it acts like a true final exam: faster, more technical, and more memorable.
+
+### 2. Rebalance the full track set
+
+- Audit medal times across all tracks.
+- Make early tracks short and readable.
+- Make mid-tier tracks emphasize one mechanic at a time.
+- Make late tracks combine mechanics instead of introducing them all at once.
+
+### 3. Add track identity metadata
+
+- Add optional track metadata such as archetype, intended lesson, and difficulty tier.
+- Use that metadata to keep future content aligned with a clear design intent.
+- Treat this as authoring support, not player-facing complexity.
+
+## Track Archetypes To Aim For
+
+- Starter: basic steering, speed upkeep, and checkpoint rhythm.
+- Technical: tighter turns, braking, and clean exits.
+- Speed: longer straight-line commitment and boost timing.
+- Jump: line-up, landing stability, and pace retention.
+- Spiral: continuous elevation change with a clear helix structure.
+- Wallride: sustained adhesion, entry transitions, and clean exits.
+- Finale: mixed skills with a strong final sequence.
+
+## What Needs To Happen Next
+
+1. Rebuild the weakest signature track first, starting with the spiral or wallride.
+2. Rebalance medals after the route shape is locked.
+3. Add track metadata so future routes can be designed against a consistent archetype.
+4. Use those archetypes to rework the rest of the roster.
+5. Only then spend time on extra systems like track editor, replay polish, or leaderboards.
+
+## Long-Term Clone Work
+
+- Ghost replay and better run comparison.
+- Track editor with export/import support.
+- Better progression presentation in the UI.
+- More authored tracks with clear setpieces and difficulty ramps.
+
+## Practical Rule
+
+If a track feels like a test case, it should be redesigned.
+If a track feels like a lesson, it is probably on the right path.

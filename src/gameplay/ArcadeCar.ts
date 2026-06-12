@@ -46,16 +46,16 @@ const DEFAULT_CONFIG: ArcadeCarConfig = {
     reverseForce: 20000,
     maxSpeedKmh: 280,
 
-    baseTurnSpeed: 2.8,
+    baseTurnSpeed: 2.5,
     highSpeedTurnFactor: 0.55,
     turnSpeedRampKmh: 200,
-    lowSpeedSteerRampKmh: 80,
+    lowSpeedSteerRampKmh: 100,
     steeringSmoothing: 20,
 
     lateralGrip: 0.92,
     downforceFactor: 150,
-    lowSpeedSteerSmoothing: 15.0,
-    highSpeedSteerSmoothing: 30.0,
+    lowSpeedSteerSmoothing: 10.0,
+    highSpeedSteerSmoothing: 24.0,
 
     airPitchForce: 3000,
     airRollForce: 2000,
@@ -101,6 +101,9 @@ export class ArcadeCar {
     private _groundRay = new Ray(Vector3.Zero(), Vector3.Zero(), 0);
     private _cornerLocal = Vector3.Zero();
     private _cornerWorld = Vector3.Zero();
+    private _supportDirection = Vector3.Down();
+    private _hasSupportDirection = false;
+    private _wallHitSide = 0; // -1 = left wall, 1 = right wall, 0 = none
 
     constructor(private scene: Scene, config?: Partial<ArcadeCarConfig>) {
         this.config = { ...DEFAULT_CONFIG, ...config };
@@ -148,7 +151,7 @@ export class ArcadeCar {
         // --- Flip Detection ---
         const upDot = Vector3.Dot(this._upVec, this._worldUp);
         const wasFlipped = this.isFlipped;
-        this.isFlipped = upDot < this.config.flipThreshold;
+        this.isFlipped = upDot < this.config.flipThreshold && !this.isGrounded;
 
         if (this.isFlipped) {
             this.flipRecoveryTimer += _dt;
@@ -177,6 +180,9 @@ export class ArcadeCar {
     /**
      * Multi-ray ground check using 4 rays at the corners of the car bounding box.
      * Grounded only if at least 2 of 4 rays hit.
+     * For loop-de-loops, also casts "ceiling" rays (in car's "up" direction)
+     * to detect inverted track surfaces.
+     * For wall riding, also casts side rays to detect vertical surfaces.
      */
     private checkGrounded(): void {
         const spread = this.config.groundRaySpread;
@@ -194,26 +200,86 @@ export class ArcadeCar {
 
         Vector3.TransformNormalToRef(Vector3.Down(), worldMatrix, this._downVec);
         this._downVec.normalize();
+        Vector3.TransformNormalToRef(Vector3.Up(), worldMatrix, this._upVec);
+        this._upVec.normalize();
 
-        let hits = 0;
+        // Also get forward/right vectors for side ray detection
+        Vector3.TransformNormalToRef(Vector3.Forward(), worldMatrix, this._forwardVec);
+        this._forwardVec.normalize();
+        Vector3.TransformNormalToRef(Vector3.Right(), worldMatrix, this._rightVec);
+        this._rightVec.normalize();
+
+        let surfaceHits = 0;
+        let ceilingHits = 0;
+        let wallHits = 0;
+        this._hasSupportDirection = false;
+        this._supportDirection.copyFrom(this._downVec);
+        this._wallHitSide = 0; // -1 = left wall, 1 = right wall, 0 = none
 
         for (let i = 0; i < corners.length; i++) {
             const [dx, dz] = corners[i];
             this._cornerLocal.set(dx, 0, dz);
             Vector3.TransformCoordinatesToRef(this._cornerLocal, worldMatrix, this._cornerWorld);
 
+            // Down ray: detects normal ground
             this._groundRay.origin.set(this._cornerWorld.x, this._cornerWorld.y, this._cornerWorld.z);
             this._groundRay.direction.copyFrom(this._downVec);
             this._groundRay.length = dist;
 
-            const pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
-
+            let pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
             if (pickResult?.hit) {
-                hits++;
+                surfaceHits++;
+                this._supportDirection.copyFrom(this._downVec);
+                this._hasSupportDirection = true;
+                continue;
+            }
+
+            // Ceiling ray: detects inverted track (loop tops, etc.)
+            this._groundRay.origin.set(this._cornerWorld.x, this._cornerWorld.y, this._cornerWorld.z);
+            this._groundRay.direction.copyFrom(this._upVec);
+            this._groundRay.length = dist * 2;
+
+            pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
+            if (pickResult?.hit) {
+                surfaceHits++;
+                ceilingHits++;
+                this._supportDirection.copyFrom(this._upVec);
+                this._hasSupportDirection = true;
             }
         }
 
-        this.isGrounded = hits >= 2;
+        // Additional check for wall riding - cast rays to the side
+        // Only check if not already grounded (or even if grounded, for wall riding surfaces)
+        if (surfaceHits < 2) {
+            // Check left side
+            this._groundRay.origin.set(this.mesh.position.x, this.mesh.position.y + 0.5, this.mesh.position.z);
+            this._groundRay.direction.copyFrom(this._rightVec.scale(-1)); // left
+            this._groundRay.length = dist * 1.5;
+
+            let pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
+            if (pickResult?.hit) {
+                this._wallHitSide = -1;
+                wallHits++;
+                this._supportDirection.copyFrom(this._rightVec);
+                this._supportDirection.scaleInPlace(-1);
+                this._hasSupportDirection = true;
+            }
+
+            // Check right side
+            this._groundRay.origin.set(this.mesh.position.x, this.mesh.position.y + 0.5, this.mesh.position.z);
+            this._groundRay.direction.copyFrom(this._rightVec);
+            this._groundRay.length = dist * 1.5;
+
+            pickResult = this.scene.pickWithRay(this._groundRay, (mesh) => mesh !== this.mesh);
+            if (pickResult?.hit) {
+                this._wallHitSide = 1;
+                wallHits++;
+                this._supportDirection.copyFrom(this._rightVec);
+                this._hasSupportDirection = true;
+            }
+        }
+
+        this.isGrounded = surfaceHits >= 2 || ceilingHits >= 1 || wallHits >= 1;
     }
 
     private applyTorque(body: PhysicsBody, torque: Vector3): void {
@@ -261,7 +327,7 @@ export class ArcadeCar {
         const currentYawVel = Vector3.Dot(this._angVel, upVec);
         const yawError = targetYawVel - currentYawVel;
 
-        upVec.scaleToRef(yawError * 0.8, this._tempVec1);
+        upVec.scaleToRef(yawError * 0.6, this._tempVec1);
         this._angVel.addInPlace(this._tempVec1);
         this.body.setAngularVelocity(this._angVel);
 
@@ -291,17 +357,35 @@ export class ArcadeCar {
         // --- GRIP ---
         const latVel = Vector3.Dot(vel, rightVec);
         if (Math.abs(latVel) > 0.1) {
-            forwardVec.scaleToRef(-0.4, this._tempVec1);
+            forwardVec.scaleToRef(-0.05, this._tempVec1);  // nearly at center of mass
             pos.addToRef(this._tempVec1, this._gripPos);
 
             rightVec.scaleToRef(-latVel * this.config.mass * this.config.lateralGrip, this._gripImpulse);
             this.body.applyImpulse(this._gripImpulse, this._gripPos);
         }
 
+        const supportDirection = this._hasSupportDirection ? this._supportDirection : this._downVec;
+
+        // Press the car into the detected surface so loops and wall rides stay attached.
+        const adhesionScale = this._wallHitSide !== 0 ? 35 : 30;
+        supportDirection.scaleToRef(this.config.mass * adhesionScale, this._tempVec1);
+        this.body.applyForce(this._tempVec1, pos);
+
+        // Nudge the car's up vector toward the opposite of the support direction.
+        // This keeps the chassis aligned with inverted and side-facing track sections.
+        Vector3.CrossToRef(supportDirection, upVec, this._alignTorqueDir);
+        const alignScale = this._wallHitSide !== 0 ? this.config.autoLevelForce * 1.25 : this.config.autoLevelForce * 0.6;
+        this._alignTorqueDir.scaleToRef(alignScale, this._tempVec1);
+        this.applyTorque(this.body, this._tempVec1);
+
         // --- DOWNFORCE ---
+        // Redirect downforce toward detected surface orientation. When wall-riding,
+        // pushing along -upVec would shove the car away from the wall.
         if (currentSpeedKmh > 80) {
-            const df = -this.config.downforceFactor * ((currentSpeedKmh - 80) / 50);
-            upVec.scaleToRef(df, this._tempVec1);
+            const df = this.config.downforceFactor * ((currentSpeedKmh - 80) / 50);
+            this._wallHitSide !== 0
+                ? supportDirection.scaleToRef(df, this._tempVec1)   // push into wall
+                : upVec.scaleToRef(-df, this._tempVec1);            // push into ground
             this.body.applyForce(this._tempVec1, pos);
         }
     }

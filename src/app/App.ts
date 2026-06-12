@@ -248,6 +248,11 @@ export class App {
             this.updateGhostVisibility();
         }
 
+        if (this.inputManager.isCameraToggleDown) {
+            const modeName = this.renderer.cycleCameraMode();
+            this.ui.showMessage(modeName);
+        }
+
         // Auto-start race when accelerating
         if (this.raceManager.state === RaceState.READY &&
             (this.inputManager.isForwardDown || this.inputManager.isBackDown)) {
@@ -406,6 +411,7 @@ export class App {
 
         // Dynamic FOV for speed sense
         this.renderer.updateCameraForSpeed(this.car.getSpeedKmh());
+        this.renderer.updateCameraMode();
 
         // Update Ghost Car visuals
         if (this.isGhostEnabled && this.ghostManager.hasGhost() && this.raceManager.state === RaceState.RACING) {

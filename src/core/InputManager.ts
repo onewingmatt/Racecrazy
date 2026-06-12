@@ -12,6 +12,7 @@ export class InputManager {
     // Singular action triggers
     public isRestartDown: boolean = false;
     public isGhostToggleDown: boolean = false;
+    public isCameraToggleDown: boolean = false;
 
     private touchContainer: HTMLDivElement | null = null;
 
@@ -143,58 +144,96 @@ export class InputManager {
     }
 
     private handleKeyDown = (event: KeyboardEvent): void => {
+        let handled = false;
+
         switch (event.code) {
             case "ArrowUp":
             case "KeyW":
                 this.isForwardDown = true;
+                handled = true;
                 break;
             case "ArrowDown":
             case "KeyS":
                 this.isBackDown = true;
+                handled = true;
                 break;
             case "ArrowLeft":
             case "KeyA":
                 this.isLeftDown = true;
+                handled = true;
                 break;
             case "ArrowRight":
             case "KeyD":
                 this.isRightDown = true;
+                handled = true;
                 break;
             case "KeyR":
             case "Backspace":
-                this.isRestartDown = true;
+                if (!event.repeat) {
+                    this.isRestartDown = true;
+                }
+                handled = true;
                 break;
             case "KeyG":
-                this.isGhostToggleDown = true;
+                if (!event.repeat) {
+                    this.isGhostToggleDown = true;
+                }
+                handled = true;
                 break;
+            case "KeyC":
+                if (!event.repeat) {
+                    this.isCameraToggleDown = true;
+                }
+                handled = true;
+                break;
+        }
+
+        if (handled) {
+            event.preventDefault();
         }
     };
 
     private handleKeyUp = (event: KeyboardEvent): void => {
+        let handled = false;
+
         switch (event.code) {
             case "ArrowUp":
             case "KeyW":
                 this.isForwardDown = false;
+                handled = true;
                 break;
             case "ArrowDown":
             case "KeyS":
                 this.isBackDown = false;
+                handled = true;
                 break;
             case "ArrowLeft":
             case "KeyA":
                 this.isLeftDown = false;
+                handled = true;
                 break;
             case "ArrowRight":
             case "KeyD":
                 this.isRightDown = false;
+                handled = true;
                 break;
             case "KeyR":
             case "Backspace":
                 this.isRestartDown = false;
+                handled = true;
                 break;
             case "KeyG":
                 this.isGhostToggleDown = false;
+                handled = true;
                 break;
+            case "KeyC":
+                this.isCameraToggleDown = false;
+                handled = true;
+                break;
+        }
+
+        if (handled) {
+            event.preventDefault();
         }
     };
 
@@ -253,5 +292,6 @@ export class InputManager {
     public resetPerFrameInputs(): void {
         this.isRestartDown = false;
         this.isGhostToggleDown = false;
+        this.isCameraToggleDown = false;
     }
 }
